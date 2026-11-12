@@ -1,12 +1,14 @@
 {
   "name": "obsidian-plugin-issue-bridge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Connect assigned GitHub issues to native tasks in existing Obsidian notes.",
   "license": "MIT",
   "author": "Michael J. Stallinger",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
@@ -15,9 +17,13 @@
     "deploy": "npm run check && node scripts/deploy.mjs"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^24.0.0",
     "esbuild": "0.28.2",
     "obsidian": "latest",
     "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "markdown-it": "^15.0.3"
   }
 }

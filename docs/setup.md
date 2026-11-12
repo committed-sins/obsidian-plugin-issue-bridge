@@ -1,6 +1,6 @@
 # Test preview setup
 
-Issue Bridge 0.1.0 is an initial development preview. Desktop/mobile runtime behavior and a real GitHub App login still require live validation. The test deployment target is `C:/Users/mj/Obsidian/Test`, selected in ignored `.env.local`.
+Issue Bridge 0.1.1 is a development preview. Desktop/mobile runtime behavior and a real GitHub App login still require live validation. The test deployment target is `C:/Users/mj/Obsidian/Test`, selected in ignored `.env.local`.
 
 ## GitHub App
 
@@ -47,6 +47,26 @@ Only github.com is supported in this preview. One note per normalized repository
 The imported set consists of all issues assigned to the connected account, open and closed. Pull requests are excluded. Local changes inside the managed block, including checkboxes or extra Tasks metadata, are replaced by GitHub's state on the next sync. Other note content and YAML remain unchanged. Malformed markers, duplicate mappings and concurrent/unsaved edits cause a skip.
 
 When removing a mapping, the old block stays as ordinary content and is no longer updated. Changing a mapping replaces its existing block with the new repository's issues on the next successful sync. Private issue titles and URLs become ordinary note content: the vault's backups, Git history, sync and sharing can copy them.
+
+## Read-only README blocks
+
+Add this to a saved note with `github_repo: https://github.com/owner/repository` in its frontmatter:
+
+````markdown
+```issue-bridge
+README.md
+```
+````
+
+In Reading view or rendered Live Preview, expand the file name to fetch and show the Markdown. **Refresh** fetches again; **View on GitHub** opens the source. The block does not modify its source, the note, or imported Tasks. It uses the repository's default branch. One relative Markdown file path per block is supported, including `docs/overview.md`; paths are case-sensitive.
+
+Public files work anonymously. Private files require sign-in, repository access and a GitHub App installation with **Contents: read-only**. The current app still requests Issues/metadata only; this change does not broaden app permissions or install it on additional repositories. A 404 can mean a missing file or insufficient access.
+
+Files must be valid UTF-8 Markdown and no larger than 200 KiB. Up to 32 entries are cached in memory for five minutes, shared across blocks for the same connection/repository/path. Nothing is persisted in note files or synced settings. Refresh errors keep the previous preview with a status message. Closing/reloading the plugin clears its cache; each rendered block owns its DOM lifetime.
+
+Relative links resolve on GitHub. Images appear as clickable links rather than loading automatically. HTML is escaped, output is sanitized by Obsidian, and remote code fences never invoke local code-block processors such as DataviewJS. Task syntax is plain display text without interactive checkboxes. GitHub-specific HTML layouts, wikilinks and local plugin extensions are intentionally not interpreted.
+
+Live check: reload Issue Bridge in the Test vault, add a disposable mapped note and the block above, then expand it in Reading view and Live Preview. Check formatting, relative links, collapse/expand, refresh, a nonexistent file and an offline refresh. Verify the code block and note text stay unchanged. Actual desktop/mobile rendering is not established by synthetic host tests.
 
 ## Finding new issues
 

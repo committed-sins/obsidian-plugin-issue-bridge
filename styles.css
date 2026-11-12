@@ -1,2 +1,8 @@
 .issue-bridge-device-code { font-size: 1.8em; font-family: var(--font-monospace); user-select: all; margin: 1em 0; }
 .issue-bridge-status { white-space: pre-wrap; }
+.issue-bridge-preview { border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: var(--size-4-3); }
+.issue-bridge-preview > summary { cursor: pointer; font-weight: var(--font-semibold); }
+.issue-bridge-preview-tools { display: flex; align-items: center; gap: var(--size-4-3); margin-top: var(--size-4-3); }
+.issue-bridge-preview-status { color: var(--text-muted); font-size: var(--font-smallest); }
+.issue-bridge-preview-body { overflow-wrap: anywhere; }
+.issue-bridge-preview-body pre { overflow-x: auto; }

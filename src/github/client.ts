@@ -1,5 +1,6 @@
 import type { Http } from './auth';
 export interface Issue { number: number; title: string; state: 'open' | 'closed' }
+export interface RepositoryMarkdown { markdown: string; url: string }
 export class ApiError extends Error {
   constructor(public status: number, public retryAt = 0) { super(`GitHub request failed (HTTP ${status}). ${status === 401 ? 'Sign in again.' : status === 403 || status === 404 ? 'Check app installation and Issues: read access.' : 'Previous tasks were retained.'}`); }
 }
@@ -9,7 +10,7 @@ export class GitHubClient {
     if (!this.active()) throw new Error('Sync cancelled.');
     let response;
     try { response = await this.http({ url: `https://api.github.com${path}`, method: 'GET', headers: {
-      Authorization: `Bearer ${this.token}`, Accept: 'application/vnd.github+json',
+      ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}), Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28', 'Cache-Control': 'no-cache'
     } }); } catch { throw new Error('GitHub could not be reached. Previous tasks were retained.'); }
     if (!this.active()) throw new Error('Sync cancelled.');
@@ -25,6 +26,19 @@ export class GitHubClient {
     const user = await this.get('/user') as { login?: unknown };
     if (!user || typeof user.login !== 'string' || !/^[a-z\d-]+$/i.test(user.login)) throw new Error('GitHub returned an invalid account.');
     return user.login;
+  }
+  async repositoryMarkdown(repo: string, path: string): Promise<RepositoryMarkdown> {
+    const file = await this.get(`/repos/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`) as Record<string, unknown>;
+    if (!file || file.type !== 'file' || file.encoding !== 'base64' || typeof file.content !== 'string'
+      || typeof file.size !== 'number' || file.size < 0 || file.size > 200 * 1024 || file.content.length > 300 * 1024
+      || typeof file.html_url !== 'string' || file.path !== path) throw new Error('Expected a Markdown file of at most 200 KiB.');
+    const url = new URL(file.html_url);
+    if (url.origin !== 'https://github.com' || url.username || url.password || !url.pathname.toLowerCase().startsWith(`/${repo.toLowerCase()}/blob/`)) throw new Error('GitHub returned an invalid source URL.');
+    try {
+      const bytes = Uint8Array.from(atob(file.content.replace(/\s/g, '')), c => c.charCodeAt(0));
+      if (bytes.length > 200 * 1024) throw new Error();
+      return { markdown: new TextDecoder('utf-8', { fatal: true }).decode(bytes), url: url.href };
+    } catch { throw new Error('The repository file is not a valid UTF-8 Markdown file.'); }
   }
   async assignedIssues(repo: string, login: string): Promise<Issue[]> {
     const issues = new Map<number, Issue>();

@@ -6,7 +6,7 @@ Issue Bridge connects GitHub repositories to existing Obsidian notes and synchro
 
 Developed by **Committed Sins — Michael J. Stallinger**.
 
-**Status: development preview 0.1.0, deployed to the Test vault. Automated checks pass; real GitHub App sign-in and live desktop/mobile validation are pending. No public release yet.**
+**Status: development preview 0.1.1, deployed to the Test vault. Automated checks pass; real GitHub App sign-in and live desktop/mobile validation are pending. No public release yet.**
 
 ## Preview behavior
 
@@ -39,6 +39,20 @@ Illustrative generated section; the issues below are examples:
 ```
 
 The initial design allows one active note per repository in a vault. Duplicate mappings produce a warning and leave all affected notes unchanged.
+
+## Collapsible repository Markdown
+
+In a saved note with a `github_repo` property, add:
+
+````markdown
+```issue-bridge
+README.md
+```
+````
+
+The block renders a collapsed, read-only Markdown preview from that repository's default branch. Expand it to fetch the file; **Refresh** reloads it and **View on GitHub** opens the source. A relative Markdown path such as `docs/overview.md` also works. The preview never writes note or repository content and does not create imported tasks.
+
+Public files work without sign-in. Private files use the connected account and additionally require **Contents: read-only** on the GitHub App; the current Issues-only app permission is not expanded automatically. The file limit is 200 KiB. Content is cached only in memory for up to five minutes, with at most 32 retained entries. Images appear as links to avoid automatic external downloads. Remote HTML, executable plugin code blocks and interactive checkboxes are not rendered as active content. Relative links resolve against the GitHub source file.
 
 ## Identity and scope
 

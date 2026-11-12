@@ -14,3 +14,7 @@ Issue Bridge reuses the device-code request/poll/slow-down pattern, refresh-toke
 The issue client, repository-note mapping, managed task sections, scheduler, notifications and settings are Issue Bridge implementation. OAuth requests and issue synchronization are independent of upstream's repository-file sync.
 
 Original source/license references are pinned to the commit above. Importing future upstream changes requires an explicit comparison and validation, rather than replacing the adapted files wholesale.
+
+## Markdown rendering dependencies
+
+The read-only repository preview uses `markdown-it` and its runtime dependencies from npm. Exact versions are recorded in package-lock.json. Original license files for every production dependency are collected from the installed packages and embedded in the distributed main.js banner during the build. No dependency source or license is replaced with Committed Sins authorship. Obsidian provides the final HTML-to-DOM sanitizer at runtime.

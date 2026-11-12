@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1 — 2026-11-12
+
+- Added collapsible read-only `issue-bridge` Markdown blocks for README.md and other relative Markdown paths in the note's `github_repo` repository.
+- Fetch on first expansion, refresh on request, link to the source and preserve the displayed preview on refresh errors.
+- Support anonymous public files and authenticated private files when Contents: read-only is granted separately. No GitHub App permission change is performed.
+- Render Markdown with a standalone parser and sanitized DOM, without executing local plugin processors, loading images or exposing interactive task checkboxes.
+- Added bounded memory-only caching, UTF-8/file-size validation, mapping/session change guards and focused provider/rendering/lifecycle tests. All 35 tests pass; live UI verification remains pending.
+
 ## 0.1.0 — 2026-11-12
 
 Initial development preview, deployed to the Test vault; no public release.

@@ -57,6 +57,14 @@ One SecretStorage record holds the app ID, account, access/refresh tokens and ex
 
 Plugin data.json contains non-secret settings. Vault-scoped local storage contains non-secret issue-number baselines, unread repository/issue/note references and check summaries. Each device has independent notification state. Imported private issue content follows the vault's sync, Git history and sharing rules.
 
+## Repository Markdown previews (0.1.1)
+
+`preview/block.ts` registers the `issue-bridge` fenced-block processor and attaches a MarkdownRenderChild for cleanup. A closed native details/summary control fetches nothing; first expansion reads one relative Markdown path from the mapped repository. Manual refresh retains previous content on errors. Source URLs and file data are validated, UTF-8 is decoded strictly and content is limited to 200 KiB.
+
+`preview/markdown.ts` uses standalone markdown-it with HTML disabled, then Obsidian's sanitizeHTMLToDom. It does not call MarkdownRenderer, so remote code fences cannot trigger executable local processors. Links resolve against the validated GitHub file URL; images become links and no automatic third-party asset request is generated. No task input controls are created.
+
+`preview/cache.ts` shares in-flight reads and caches successful results for five minutes with at most 32 entries. Cache keys include connection epoch, repository and path. Cache data stays in memory and clears on disconnect/sign-in/unload. Mapping and connection changes are checked before displaying fetched results. Public reads send no credential; a 404 retries with the connected account when available. Private file access additionally needs Contents: read-only, which is not granted by this implementation/deployment.
+
 ## Validation limits
 
 Tests use synthetic responses and a minimal host stub. They establish behavior under those fixtures, not actual desktop/mobile editor persistence, background lifecycle, SecretStorage protection or real GitHub access. Run setup.md's live checks before broader deployment or release.

@@ -8,6 +8,9 @@ import IssueBridge from '../src/main';
 import { cleanSettings } from '../src/settings';
 import { ISSUE_BRIDGE_APP } from '../src/github/app';
 import { TFile, MarkdownView, Notice } from './obsidian';
+import { previewPath, previewHtml } from '../src/preview/markdown';
+import { PreviewCache } from '../src/preview/cache';
+import { RepositoryPreview } from '../src/preview/block';
 const fixture: Issue[] = [{ number: 2, title: 'Keep context', state: 'open' }, { number: 1, title: 'Done', state: 'closed' }];
 const issue = (number: number, state = 'open') => ({ number, title: `Issue ${number}`, state, assignees: [{ login: 'tester' }] });
 const ok = (json: unknown) => ({ status: 200, json });
@@ -223,4 +226,102 @@ test('runtime unsaved editor buffers defer updates', async () => {
   const r = runtime();
   r.app.workspace.getLeavesOfType = () => [{ view: new MarkdownView(r.file, 'Unsaved user text') }];
   await r.plugin.sync(false); assert.equal(r.writes(), 0); assert.deepEqual(r.local.snapshots, {});
+});
+
+const markdownFile = (text = '# Hello\n\nWorld') => ({ type: 'file', encoding: 'base64', size: Buffer.byteLength(text),
+  content: Buffer.from(text).toString('base64'), path: 'README.md', html_url: 'https://github.com/o/r/blob/main/README.md' });
+test('preview paths accept relative Markdown files and reject URLs/traversal/multiple instructions', () => {
+  assert.equal(previewPath('README.md\n'), 'README.md');
+  assert.equal(previewPath('docs/Getting started.md'), 'docs/Getting started.md');
+  for (const value of ['', '../README.md', '/README.md', 'https://evil.test/r.md', 'README.md\nother.md', 'a/../README.md', 'a\\README.md', 'README.md?x=1', 'main.js']) assert.throws(() => previewPath(value));
+});
+test('repository Markdown uses the default branch and decodes UTF-8 without sending anonymous credentials', async () => {
+  let url = '';
+  const result = await new GitHubClient(async req => {
+    url = req.url; assert.equal(req.method, 'GET'); assert.equal(req.headers.Authorization, undefined);
+    return ok(markdownFile('# Grüße 🌉'));
+  }, '').repositoryMarkdown('o/r', 'README.md');
+  assert.equal(url, 'https://api.github.com/repos/o/r/contents/README.md');
+  assert.equal(result.markdown, '# Grüße 🌉'); assert.ok(result.url.startsWith('https://github.com/o/r/blob/'));
+});
+test('repository Markdown rejects directories, oversized/invalid content and unrelated source URLs', async () => {
+  for (const file of [[], { ...markdownFile(), type: 'dir' }, { ...markdownFile(), size: 205000 }, { ...markdownFile(), content: '!' },
+    { ...markdownFile(), content: '/w==' }, { ...markdownFile(), html_url: 'https://evil.test/r.md' }, { ...markdownFile(), path: 'other.md' }]) {
+    await assert.rejects(new GitHubClient(async () => ok(file), '').repositoryMarkdown('o/r', 'README.md'));
+  }
+});
+test('remote Markdown keeps formatting and relative links without executing HTML/code or loading images', () => {
+  const html = previewHtml('# Intro\n\n**Bold** [Docs](docs/guide.md)\n\n![badge](https://tracker.test/a.png)\n\n<script>alert(1)</script>\n\n```dataviewjs\nalert(2)\n```\n\n- [ ] remote task\n\n[Bad](javascript:alert(3))', 'https://github.com/o/r/blob/main/README.md');
+  assert.ok(html.includes('<h1>Intro</h1>')); assert.ok(html.includes('<strong>Bold</strong>'));
+  assert.ok(html.includes('https://github.com/o/r/blob/main/docs/guide.md'));
+  assert.ok(!html.includes('<script>')); assert.ok(!html.includes('<img')); assert.ok(!html.includes('<input'));
+  assert.ok(!html.includes('href="javascript:')); assert.ok(html.includes('<pre><code class="language-dataviewjs">'));
+});
+test('preview cache shares requests, expires, refreshes, evicts failures and bounds retained content', async () => {
+  let now = 1, calls = 0;
+  const cache = new PreviewCache(() => now);
+  const fetch = async () => { calls++; return { markdown: 'test', url: 'https://github.com/o/r/blob/main/README.md' }; };
+  await Promise.all([cache.get('one', false, fetch), cache.get('one', true, fetch)]); assert.equal(calls, 1);
+  await cache.get('one', false, fetch); assert.equal(calls, 1);
+  await cache.get('one', true, fetch); assert.equal(calls, 2);
+  now += 300001; await cache.get('one', false, fetch); assert.equal(calls, 3);
+  await assert.rejects(cache.get('fail', false, async () => { throw new Error('offline'); }));
+  await cache.get('fail', false, fetch); assert.equal(calls, 4);
+  for (let i = 0; i < 33; i++) await cache.get(`key-${i}`, false, fetch);
+  await cache.get('one', false, fetch); assert.equal(calls, 38);
+  cache.clear(); await cache.get('one', false, fetch); assert.equal(calls, 39);
+});
+test('runtime repository previews never modify notes and allow public reads while signed out', async () => {
+  const r = runtime(), before = r.docs.get(r.file.path);
+  r.internal.session.disconnect();
+  r.internal.http = async (req: { headers: Record<string, string> }) => { assert.equal(req.headers.Authorization, undefined); return ok(markdownFile()); };
+  const result = await r.internal.repositoryPreview(r.file.path, 'README.md', false);
+  assert.equal(result.markdown, '# Hello\n\nWorld'); assert.equal(r.writes(), 0); assert.equal(r.docs.get(r.file.path), before);
+});
+test('private preview retries with the connected token and reports missing Contents permission', async () => {
+  const r = runtime(); const requests: any[] = [];
+  r.internal.http = async (req: any) => { requests.push(req); return req.headers.Authorization ? ok(markdownFile()) : { status: 404, json: {} }; };
+  await r.internal.repositoryPreview(r.file.path, 'README.md', false);
+  assert.equal(requests.length, 2); assert.equal(requests[1].headers.Authorization, 'Bearer fake'); assert.equal(r.writes(), 0);
+  r.internal.http = async () => ({ status: 404, json: {} });
+  await assert.rejects(r.internal.repositoryPreview(r.file.path, 'README.md', true), /Contents: read-only/);
+});
+test('preview results are discarded if connection or repository mapping changes during fetch', async () => {
+  for (const disconnect of [true, false]) {
+    const r = runtime();
+    r.internal.http = async () => {
+      if (disconnect) r.internal.epoch++;
+      else r.docs.set(r.file.path, '---\ngithub_repo: https://github.com/other/repo\n---\n');
+      return ok(markdownFile());
+    };
+    await assert.rejects(r.internal.repositoryPreview(r.file.path, 'README.md', false)); assert.equal(r.writes(), 0);
+  }
+});
+class PreviewElement {
+  children: PreviewElement[] = [];
+  events = new Map<string, () => void>();
+  text = ''; open = false; disabled = false; hidden = false;
+  constructor(public tag = 'div', public cls = '') {}
+  createEl(tag: string, options: { text?: string; cls?: string } = {}) { const el = new PreviewElement(tag, options.cls); el.text = options.text ?? ''; this.children.push(el); return el; }
+  createDiv(options: { cls?: string } = {}) { return this.createEl('div', options); }
+  setText(text: string) { this.text = text; }
+  empty() { this.children = []; this.text = ''; }
+  appendChild(value: { html: string }) { this.text += value.html; }
+  addEventListener(name: string, handler: () => void) { this.events.set(name, handler); }
+}
+const settle = () => new Promise(resolve => setImmediate(resolve));
+test('collapsible preview loads lazily, refreshes on request, retains content on errors and ignores unload', async () => {
+  const el = new PreviewElement(); let initial = 0, refresh = 0, fail = false;
+  const component = new RepositoryPreview(el as unknown as HTMLElement, 'README.md', async () => {
+    initial++; return { markdown: '# First', url: markdownFile().html_url };
+  }, async () => { refresh++; if (fail) throw new Error('offline'); return { markdown: '# Updated', url: markdownFile().html_url }; });
+  component.onload();
+  assert.equal(initial, 0);
+  const details = el.children[0], tools = details.children[1], button = tools.children[0], status = details.children[2], body = details.children[3];
+  assert.equal(details.open, false); details.open = true; details.events.get('toggle')!(); await settle();
+  assert.equal(initial, 1); assert.ok(body.text.includes('First'));
+  details.events.get('toggle')!(); await settle(); assert.equal(initial, 1);
+  button.events.get('click')!(); await settle(); assert.equal(refresh, 1); assert.ok(body.text.includes('Updated'));
+  fail = true; button.events.get('click')!(); await settle(); assert.ok(status.text.includes('Previous preview retained')); assert.ok(body.text.includes('Updated'));
+  component.onunload(); button.events.get('click')!(); await settle(); assert.equal(refresh, 2);
 });

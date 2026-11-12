@@ -7,6 +7,11 @@ export class Modal { constructor(public app: any) {} }
 export class PluginSettingTab { constructor(public app: any, public plugin: any) {} }
 export class Setting {}
 export class App {}
+export class MarkdownRenderChild {
+  constructor(public containerEl: HTMLElement) {}
+  registerDomEvent(el: HTMLElement, name: string, handler: EventListener) { el.addEventListener(name, handler); }
+}
+export function sanitizeHTMLToDom(html: string) { return { html }; }
 export function requestUrl(): never { throw new Error('Unexpected real transport in test.'); }
 export function getFrontMatterInfo(content: string) {
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content);

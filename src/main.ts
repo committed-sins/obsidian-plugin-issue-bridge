@@ -5,6 +5,9 @@ import type { Http } from './github/auth';
 import { DeviceFlowModal } from './deviceFlowModal';
 import { cleanSettings, DEFAULTS, IssueBridgeSettings, type Settings } from './settings';
 import { duplicateRepos, newIssueNumbers, normalizeRepo, updateBlock, type Mapping } from './sync/core';
+import { registerRepositoryPreview } from './preview/block';
+import { PreviewCache } from './preview/cache';
+import { previewPath } from './preview/markdown';
 interface Unread { repo: string; number: number; path: string }
 interface LocalState { secretId: string; snapshots: Record<string, number[]>; unread: Unread[]; lastSync: number; summary: string }
 const LOCAL_KEY = 'issue-bridge-v1';
@@ -21,6 +24,7 @@ export default class IssueBridge extends Plugin {
   private statusEl?: HTMLElement;
   private retryAt = 0;
   private vaultRevision = 0;
+  private previews = new PreviewCache();
   private http: Http = async request => {
     try { return await requestUrl({ ...request, throw: false }); }
     catch { throw new Error('GitHub could not be reached. Check your connection.'); }
@@ -35,6 +39,7 @@ export default class IssueBridge extends Plugin {
     this.persistLocal();
     if (!this.app.secretStorage) { new Notice('Issue Bridge requires Obsidian SecretStorage. Update Obsidian before signing in.'); return; }
     this.session = new Session(this.http, this.app.secretStorage, this.local.secretId, () => this.alive);
+    registerRepositoryPreview(this, (note, path, force) => this.repositoryPreview(note, path, force));
     this.addSettingTab(new IssueBridgeSettings(this.app, this));
     const changed = () => { this.vaultRevision++; };
     this.registerEvent(this.app.vault.on('modify', changed));
@@ -58,7 +63,32 @@ export default class IssueBridge extends Plugin {
     });
     this.schedule();
   }
-  onunload() { this.alive = false; this.epoch++; if (this.timer) window.clearInterval(this.timer); this.modal?.close(); }
+  onunload() { this.alive = false; this.epoch++; this.previews.clear(); if (this.timer) window.clearInterval(this.timer); this.modal?.close(); }
+  private async repositoryPreview(note: string, path: string, force: boolean) {
+    path = previewPath(path);
+    const file = this.app.vault.getAbstractFileByPath(note);
+    if (!(file instanceof TFile)) throw new Error('Save this note and add its github_repo property first.');
+    const repo = this.mapping(await this.app.vault.read(file))?.repo;
+    if (!repo) throw new Error('Add github_repo: https://github.com/owner/repository to this note.');
+    const epoch = this.epoch, active = () => this.alive && this.epoch === epoch;
+    if (!active()) throw new Error('Preview cancelled.');
+    const result = await this.previews.get(`${epoch}:${repo}:${path}`, force, async () => {
+      try { return await new GitHubClient(this.http, '', active).repositoryMarkdown(repo, path); }
+      catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 404) throw error;
+        if (!this.hasCredential()) throw new Error('File not found or repository is private. Check the path and sign in; private files also require Contents: read-only permission.');
+        const token = await this.session.token();
+        if (!active()) throw new Error('Preview cancelled.');
+        try { return await new GitHubClient(this.http, token, active).repositoryMarkdown(repo, path); }
+        catch (error) {
+          if (error instanceof ApiError && [403, 404].includes(error.status)) throw new Error('File unavailable. Check its path and app installation; private repository files also require Contents: read-only permission.');
+          throw error;
+        }
+      }
+    });
+    if (!active() || this.mapping(await this.app.vault.read(file))?.repo !== repo) throw new Error('Repository mapping or connection changed. Refresh the preview.');
+    return result;
+  }
   private persistLocal() { this.app.saveLocalStorage(LOCAL_KEY, this.local); }
   async saveSettings() { await this.saveData(this.settings); this.schedule(); }
   private schedule() {
@@ -78,6 +108,7 @@ export default class IssueBridge extends Plugin {
     if (!/^Iv[a-zA-Z\d]+$/.test(clientId)) { new Notice('Enter your GitHub App client ID (Iv…) in Issue Bridge settings.'); return; }
     this.signingIn = true;
     const epoch = ++this.epoch;
+    this.previews.clear();
     this.modal = new DeviceFlowModal(this.app, this.http, clientId, async (token, signal) => {
       const active = () => this.alive && epoch === this.epoch && !signal.aborted;
       const login = await new GitHubClient(this.http, token.access_token, active).currentUser();
@@ -92,7 +123,7 @@ export default class IssueBridge extends Plugin {
   }
   disconnect() {
     if (this.busy || this.signingIn) return;
-    this.epoch++; this.session.disconnect(); this.local.snapshots = {}; this.local.unread = []; this.retryAt = 0;
+    this.epoch++; this.previews.clear(); this.session.disconnect(); this.local.snapshots = {}; this.local.unread = []; this.retryAt = 0;
     this.persistLocal(); this.updateStatus();
     new Notice('Issue Bridge disconnected on this device. Existing note content was retained.');
   }
