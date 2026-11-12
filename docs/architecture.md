@@ -2,54 +2,61 @@
 
 ## Data flow
 
-`github_repo` in an existing note → validated repository mapping → authenticated GitHub issue fetch → complete assigned-issue snapshot → task renderer → guarded managed-block update.
+Explicit `github_repo` property → normalized unique repository mapping → authenticated GitHub assigned-issue fetch → complete paginated result → escaped native tasks → guarded managed-block update.
 
-GitHub supplies the synchronized issue data for v0.1. Obsidian owns surrounding note content. Keep the provider client separate from Markdown synchronization so another tracker can be added later without changing note-write safeguards.
+GitHub is authoritative for the managed tasks in v0.1. Obsidian owns surrounding text and frontmatter. No repository file sync, Git commits or remote issue writes are performed by the plugin.
 
-## Planned source layout
+## Source layout
 
 ```text
 src/
-  main.ts                 Plugin lifecycle and commands
-  settings.ts             Configuration and settings UI
+  main.ts                 Lifecycle, scan/write orchestration, scheduler, unread list
+  settings.ts             Validated configuration and settings UI
+  deviceFlowModal.ts      Cancellable browser-based sign-in
   github/
-    auth.ts               Authorization, renewal and secure-store adapter
-    client.ts             GitHub API, pagination and error handling
-    types.ts              Provider data models
+    auth.ts               Device-code/poll/refresh requests; injected transport
+    session.ts            Credential validation, renewal and SecretStorage adapter
+    client.ts             GitHub REST reads, issues, pagination, errors/backoff
   sync/
-    scanner.ts            Explicit repository mappings and duplicate detection
-    renderer.ts           Deterministic, escaped Markdown tasks
-    synchronizer.ts       Complete snapshots and safe note updates
-tests/                    Synthetic unit and integration fixtures
+    core.ts               URL normalization, marker validation, escaping, rendering
+tests/
+  core.test.ts            Transformation, provider, auth and synthetic-host tests
+  obsidian.ts             Minimal synthetic host, not real Obsidian persistence
+  deploy.test.mjs         Temporary-vault deployment checks
+vendor/github-enterprise-sync/
+                          Original pinned auth/UI references and MIT license
 ```
 
-This is a planned layout; source files, manifest and build tooling are not created during design initialization. Keep business logic out of `main.ts` and avoid tracker abstractions without a concrete use.
+Authentication and sign-in UI are adapted from wandermyz/obsidian-github-sync at commit `04063b3a6213f4b8915e0955119b93d2089414e0`. See THIRD_PARTY_NOTICES.md. Reference files are not compiled. The original MIT text is included in the built main.js banner as well as the repository.
 
-## Synchronization boundary
+## Sync boundary
 
-1. Scan current mappings and reject conflicting repository ownership.
-2. Fetch every page for one repository, including closed issues; filter by the connected account and exclude pull requests.
-3. Produce a complete snapshot only when all requests succeed. Track errors separately from successful empty results.
-4. Render stable issue links/tasks with safe text escaping and a deterministic order.
-5. Recheck the mapping and note content, validate one marker pair and apply only the managed-block update through an appropriate Obsidian file API.
-6. Skip unchanged content. Defer conflicting edits. Never share incomplete provider results with the writer.
+1. Read note frontmatter from file content, excluding configured folders. Normalize supported github.com URLs and identify duplicate mappings.
+2. Verify the connected GitHub login. Fetch every issue page with `state=all` and the account's assignee filter, excluding pull requests. Invalid or failed pages fail the whole repository result.
+3. Render stable issue-number ordering, open/closed checkboxes and canonical issue links. Entity-encode title punctuation/metadata symbols to avoid injected Markdown, Tasks metadata and markers.
+4. Re-read mappings after network requests. Skip new duplicates or intervening vault changes. Validate markers, file content, mapping and open editor buffers again in the write callback.
+5. Use `Vault.process` for guarded changed-content writes. Avoid invoking it for identical content. Existing YAML and text outside the marker pair remain byte-for-byte unchanged.
+6. Advance the device-local assigned-issue baseline only after a successful note update/check. Different repositories may succeed independently; errors are reported per note.
 
-Serialize writes per note and prevent overlapping sync jobs. Coalesce repeated triggers. Do not write or renew credentials after plugin shutdown. Choose ordering, first insertion and mapping-removal behavior before freezing fixtures.
+Only one synchronization job runs at a time; overlapping triggers are skipped. Unload invalidates in-flight results, timers and sign-in. Requests already sent cannot be aborted by Obsidian's HTTP adapter, but their results cannot start subsequent writes. A file write already handed to Obsidian can still finish. Later OS/filesystem failures are outside a synthetic test's guarantees.
 
-## Authentication decisions still open
+## Product choices
 
-The concept selects a GitHub App with user access tokens, but does not establish a working public-client authentication design. Before implementation, verify current GitHub requirements for authorization, token exchange, refresh and app installation, together with Obsidian's desktop/mobile capabilities.
+- First insertion appends `## GitHub Issues`. Exactly one marker pair is required thereafter. Marker text inside fenced code or malformed lines is rejected.
+- One repository per note and one active note per normalized repository. Casing, trailing slash and `.git` suffix normalize to the same mapping.
+- Removing a mapping stops future writes and leaves its block. Changing the mapping replaces the existing block on the next successful sync.
+- Closed assigned issues remain checked tasks; no synthetic completion date is added. Local checkbox edits and Tasks-added metadata inside the block are replaced on sync.
+- Default five-minute polling plus startup/resume checks. Rate-limit responses defer retries. No webhook server or OS push service.
+- First import establishes the notification baseline. Later additions to the assigned set remain unread until acknowledged; notes update independently of the notice toggle.
 
-Evaluate authorization-code/PKCE and device authorization where supported. Determine whether token exchange/renewal needs a backend. A distributed plugin must not contain a confidential client secret; introducing a backend requires a documented deployment, privacy and maintenance decision.
+## Authentication and state
 
-Select a secure device-local credential store with defined behavior on both target platforms. Do not silently fall back to plaintext plugin `data.json`, note frontmatter or synced files. Define account identity, renewal, disconnect, revoked access and missing app-installation behavior. Request the minimum permissions needed for the MVP.
+GitHub.com only, a user-supplied GitHub App client ID, Device Flow enabled, Issues: read-only and installations on intended repositories. No upstream app identity or client secret. GitHub documents renewal without a client secret for device-flow-issued tokens; setup.md links the sources. Real sign-in/renewal remain pending live testing.
 
-## Open product decisions
+One SecretStorage record holds the app ID, account, access/refresh tokens and expiries. Renewal is serialized; rotated credentials are saved together. Disconnect/sign-in/unload guards prevent stale renewal from restoring cleared credentials. The random reference is vault/device-local. The preview never falls back to plaintext vault files. SecretStorage's platform protections belong to Obsidian; no universal encryption-at-rest guarantee is asserted.
 
-- Exact supported repository URL forms and case/rename handling.
-- Initial managed-section placement and behavior after a mapping is removed or changed.
-- Task ordering, closed-task completion metadata and compatibility with Tasks auto-added metadata.
-- Default interval, rate-limit/backoff behavior and user-visible sync status.
-- Concrete authorization, renewal and secure-storage implementation on desktop and mobile.
+Plugin data.json contains non-secret settings. Vault-scoped local storage contains non-secret issue-number baselines, unread repository/issue/note references and check summaries. Each device has independent notification state. Imported private issue content follows the vault's sync, Git history and sharing rules.
 
-The initial single-note-per-repository rule follows the latest concept's proposed MVP default. It can be revisited explicitly before implementation.
+## Validation limits
+
+Tests use synthetic responses and a minimal host stub. They establish behavior under those fixtures, not actual desktop/mobile editor persistence, background lifecycle, SecretStorage protection or real GitHub access. Run setup.md's live checks before broader deployment or release.

@@ -1,0 +1,10 @@
+{
+  "id": "issue-bridge",
+  "name": "Issue Bridge",
+  "version": "0.1.0",
+  "minAppVersion": "1.11.4",
+  "description": "Connect assigned GitHub issues to native Markdown tasks in your existing notes.",
+  "author": "Committed Sins",
+  "authorUrl": "https://github.com/committed-sins",
+  "isDesktopOnly": false
+}

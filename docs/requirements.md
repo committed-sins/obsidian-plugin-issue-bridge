@@ -1,6 +1,6 @@
 # MVP requirements
 
-These requirements capture the Issue Bridge concept. They describe intended behavior, not implemented capabilities.
+These requirements capture the Issue Bridge MVP. Preview 0.1.0 implements the basic flow with automated checks; live GitHub authorization and desktop/mobile acceptance remain pending. See setup.md for the current choices and limitations.
 
 ## Repository mapping
 
