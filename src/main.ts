@@ -69,7 +69,7 @@ export default class IssueBridge extends Plugin {
   }
   hasCredential() { try { return !!this.session?.read(); } catch { return false; } }
   connectionLabel() {
-    try { const c = this.session?.read(); return c ? `Connected as ${c.login}.` : 'Not connected. Configure your Issue Bridge GitHub App, then sign in.'; }
+    try { const c = this.session?.read(); return c ? `Connected as ${c.login}.` : 'Not connected. Install Issue Bridge on selected repositories, then sign in.'; }
     catch { return 'Stored sign-in is invalid. Disconnect, then sign in again.'; }
   }
   signIn(refresh: () => void) {

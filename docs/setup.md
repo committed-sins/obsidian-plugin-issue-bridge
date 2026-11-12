@@ -4,15 +4,23 @@ Issue Bridge 0.1.0 is an initial development preview. Desktop/mobile runtime beh
 
 ## GitHub App
 
-Register an app owned by Committed Sins, for example **Issue Bridge**, with:
+**Issue Bridge by Committed Sins** is registered under the Committed Sins organization:
+
+- App ID: `5729750`
+- Public client ID: `Iv23likf10MUO96onC3o` (bundled as the default, not a secret).
+- Settings: https://github.com/organizations/committed-sins/settings/apps/issue-bridge-by-committed-sins
+- Installation: https://github.com/apps/issue-bridge-by-committed-sins/installations/new
+- Initial installation scope: **Only on this account**, Committed Sins. Broader installation availability needs a later explicit decision.
+
+Registered configuration:
 
 - Homepage: https://github.com/committed-sins/obsidian-plugin-issue-bridge
 - Device Flow enabled.
 - Repository permission **Issues: read-only**; metadata access is implicit. No Contents write permission is needed.
 - Webhooks disabled for this polling preview.
-- Install the app on each repository you want to import, including organization repositories. A user needs access to those repositories too.
+- Installation on selected repositories is a separate step and requires the organization's approval. The signed-in user also needs repository access.
 
-Copy the app's **client ID**, starting with `Iv`, into Issue Bridge settings. This preview has no built-in registered app ID and does not use GitHub Enterprise Sync's app. No client secret or private key belongs in plugin settings or source code. Registration is not performed by building or deploying the plugin.
+The app's public client ID is already the default in Issue Bridge settings. A custom GitHub App client ID can override it. GitHub Enterprise Sync's app is not used. No client secret or private key belongs in plugin settings or source code. App registration is separate from building/deploying the plugin. GitHub's registration page reports that a private key must be generated before installation; any such administration key belongs in the owner's credential management, not the plugin. The plugin itself uses only device-flow user credentials.
 
 GitHub currently documents device-flow token renewal without a client secret for tokens created through that flow. The implementation retains rotated access/refresh tokens together in SecretStorage. References:
 
@@ -22,7 +30,7 @@ GitHub currently documents device-flow token renewal without a client secret for
 ## Obsidian
 
 1. Enable/reload **Issue Bridge** in the **Test** vault.
-2. Open **Settings → Issue Bridge**, enter the client ID and select **Sign in**.
+2. Open **Settings → Issue Bridge**, select **Choose repositories on GitHub** to complete the selected-repository installation/approval, then select **Sign in**. The client ID is prefilled.
 3. Copy the displayed code and open GitHub in your system browser. Authorize the app. Closing the dialog cancels sign-in.
 4. In a disposable test note, add:
 

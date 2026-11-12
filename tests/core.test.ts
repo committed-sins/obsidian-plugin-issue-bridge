@@ -5,10 +5,20 @@ import { GitHubClient, ApiError, type Issue } from '../src/github/client';
 import { pollForToken, requestDeviceCode, refreshAccessToken, pause, type Http } from '../src/github/auth';
 import { Session } from '../src/github/session';
 import IssueBridge from '../src/main';
+import { cleanSettings } from '../src/settings';
+import { ISSUE_BRIDGE_APP } from '../src/github/app';
 import { TFile, MarkdownView, Notice } from './obsidian';
 const fixture: Issue[] = [{ number: 2, title: 'Keep context', state: 'open' }, { number: 1, title: 'Done', state: 'closed' }];
 const issue = (number: number, state = 'open') => ({ number, title: `Issue ${number}`, state, assignees: [{ login: 'tester' }] });
 const ok = (json: unknown) => ({ status: 200, json });
+
+test('fresh or blank settings use our public GitHub App identity and retain custom identities', () => {
+  assert.equal(cleanSettings(null).clientId, ISSUE_BRIDGE_APP.clientId);
+  assert.equal(cleanSettings({ clientId: '' }).clientId, ISSUE_BRIDGE_APP.clientId);
+  assert.equal(cleanSettings({ clientId: ' IvCustom ' }).clientId, 'IvCustom');
+  assert.equal(cleanSettings({ intervalMinutes: -1 }).intervalMinutes, 1);
+  assert.equal(cleanSettings({ intervalMinutes: Infinity }).intervalMinutes, 5);
+});
 
 test('repository normalization rejects credentials, arbitrary hosts and subpaths', () => {
   assert.equal(normalizeRepo('https://github.com/Owner/Repo.git/'), 'owner/repo');

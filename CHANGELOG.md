@@ -10,4 +10,4 @@ Initial development preview, deployed to the Test vault; no public release.
 - Added interval/startup/resume checks, manual sync, new-assignment notices and a device-local unread list.
 - Added automated provider, transformation, auth, orchestration and deployment checks.
 
-Own GitHub App setup and live desktop/mobile validation remain pending.
+Registered the organization-owned **Issue Bridge by Committed Sins** app and bundled its public client ID as the default, with a selected-repository installation link in settings. Its initial installation scope is Committed Sins only. Repository installation/approval, real sign-in and live desktop/mobile validation remain pending.

@@ -51,7 +51,7 @@ Only one synchronization job runs at a time; overlapping triggers are skipped. U
 
 ## Authentication and state
 
-GitHub.com only, a user-supplied GitHub App client ID, Device Flow enabled, Issues: read-only and installations on intended repositories. No upstream app identity or client secret. GitHub documents renewal without a client secret for device-flow-issued tokens; setup.md links the sources. Real sign-in/renewal remain pending live testing.
+GitHub.com only. The registered organization-owned **Issue Bridge by Committed Sins** client ID is the default, with a custom-ID override. Its initial installation scope is Committed Sins only. Device Flow is enabled, Issues is read-only, and installations on selected repositories require separate approval. No upstream app identity or client secret. GitHub documents renewal without a client secret for device-flow-issued tokens; setup.md links the sources. Real sign-in/renewal remain pending live testing.
 
 One SecretStorage record holds the app ID, account, access/refresh tokens and expiries. Renewal is serialized; rotated credentials are saved together. Disconnect/sign-in/unload guards prevent stale renewal from restoring cleared credentials. The random reference is vault/device-local. The preview never falls back to plaintext vault files. SecretStorage's platform protections belong to Obsidian; no universal encryption-at-rest guarantee is asserted.
 

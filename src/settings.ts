@@ -1,10 +1,11 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type IssueBridge from './main';
+import { ISSUE_BRIDGE_APP } from './github/app';
 export interface Settings { clientId: string; autoSync: boolean; startupSync: boolean; intervalMinutes: number; notifyNew: boolean; excludedFolders: string }
-export const DEFAULTS: Settings = { clientId: '', autoSync: true, startupSync: true, intervalMinutes: 5, notifyNew: true, excludedFolders: 'archives, templates, scripts, libraries, inbound' };
+export const DEFAULTS: Settings = { clientId: ISSUE_BRIDGE_APP.clientId, autoSync: true, startupSync: true, intervalMinutes: 5, notifyNew: true, excludedFolders: 'archives, templates, scripts, libraries, inbound' };
 export function cleanSettings(input: Partial<Settings> | null): Settings {
   const s = input ?? {};
-  return { clientId: typeof s.clientId === 'string' ? s.clientId.trim() : '',
+  return { clientId: typeof s.clientId === 'string' && s.clientId.trim() ? s.clientId.trim() : DEFAULTS.clientId,
     autoSync: typeof s.autoSync === 'boolean' ? s.autoSync : DEFAULTS.autoSync,
     startupSync: typeof s.startupSync === 'boolean' ? s.startupSync : DEFAULTS.startupSync,
     notifyNew: typeof s.notifyNew === 'boolean' ? s.notifyNew : DEFAULTS.notifyNew,
@@ -18,11 +19,13 @@ export class IssueBridgeSettings extends PluginSettingTab {
     el.empty(); el.createEl('h2', { text: 'Issue Bridge' });
     el.createEl('p', { text: 'Assigned GitHub issues become native tasks in notes with a github_repo property. GitHub is authoritative: local changes inside the managed section are replaced on sync.' });
     el.createEl('p', { text: 'Private issue titles and links are saved in your notes and follow the vault’s sync and sharing settings.' });
+    new Setting(el).setName('Repository access').setDesc('Install Issue Bridge by Committed Sins on selected repositories before syncing. The current test app is limited to the Committed Sins organization and requests Issues: read-only.')
+      .addButton(b => b.setButtonText('Choose repositories on GitHub').onClick(() => window.open(ISSUE_BRIDGE_APP.installUrl, '_blank', 'noopener,noreferrer')));
     new Setting(el).setName('Connection').setDesc(p.connectionLabel())
       .addButton(b => b.setButtonText('Sign in').setDisabled(p.busy || p.signingIn).onClick(() => p.signIn(() => this.display())))
       .addButton(b => b.setButtonText('Disconnect').setDisabled(p.busy || p.signingIn).onClick(() => { p.disconnect(); this.display(); }));
     el.createEl('p', { text: 'Uses Obsidian SecretStorage for credentials. No token is written to plugin settings or a local.json file. Disconnect clears this vault’s stored credential; revoke app access on GitHub to invalidate the authorization itself.' });
-    new Setting(el).setName('GitHub App client ID').setDesc('Your Issue Bridge GitHub App: enable Device Flow, grant Issues: read-only, and install it on the repositories to import. No client secret is needed. Sign out before changing this value.')
+    new Setting(el).setName('GitHub App client ID').setDesc('Defaults to Issue Bridge by Committed Sins. Override only for your own GitHub App with Device Flow and Issues: read-only. No client secret is needed. Sign out before changing it.')
       .addText(t => t.setPlaceholder('Iv…').setValue(p.settings.clientId).setDisabled(p.hasCredential() || p.busy || p.signingIn)
         .onChange(async value => { p.settings.clientId = value.trim(); await p.saveSettings(); }));
     new Setting(el).setName('Check on startup and resume').setDesc('When connected, check mapped repositories after loading and when returning to Obsidian.')
