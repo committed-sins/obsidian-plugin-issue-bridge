@@ -1,7 +1,8 @@
 import type { Issue } from '../github/client';
 export const START = '<!-- issue-bridge:start -->';
 export const END = '<!-- issue-bridge:end -->';
-export function normalizeRepo(value: unknown): string {
+export function normalizeRepo(value: unknown): string
+{
   if (typeof value !== 'string') throw new Error('github_repo must be a single https://github.com/owner/repository URL.');
   let url: URL;
   try { url = new URL(value.trim()); } catch { throw new Error('Invalid github_repo URL.'); }
@@ -11,6 +12,34 @@ export function normalizeRepo(value: unknown): string {
   const name = match[2].replace(/\.git$/i, '');
   if (!name || name === '.' || name === '..') throw new Error('Invalid repository name.');
   return `${match[1]}/${name}`.toLowerCase();
+}
+// A URL list may also contain websites, documentation or account links.
+export function repositoryFromProperty(value: unknown): string | null
+{
+  for (const candidate of Array.isArray(value) ? value : [value]) {
+    try { return normalizeRepo(candidate); }
+    catch { /* Only complete GitHub repository URLs are mappings. */ }
+  }
+  return null;
+}
+
+export interface TaskOptions { respectTasks: boolean; format: 'emoji' | 'dataview'; globalFilter?: string }
+const PLAIN_TASKS: TaskOptions = { respectTasks: false, format: 'emoji' };
+
+function taskMetadata(issue: Issue, previous: string, options: TaskOptions): string
+{
+  if (!options.respectTasks) return previous;
+  const idPattern = /(?:🆔\s*([a-z\d-]+)|[\[(]\s*id::\s*([a-z\d-]+)\s*[\])])/i;
+  const datePattern = /(?:➕\s*(\d{4}-\d{2}-\d{2})|[\[(]\s*created::\s*(\d{4}-\d{2}-\d{2})\s*[\])])/;
+  const previousId = idPattern.exec(previous), previousDate = datePattern.exec(previous);
+  const id = previousId?.[1] ?? previousId?.[2] ?? crypto.randomUUID().replace(/-/g, '');
+  const date = previousDate?.[1] ?? previousDate?.[2] ?? issue.createdAt.slice(0, 10);
+  let suffix = previous.replace(idPattern, '').replace(datePattern, '').trimEnd();
+  // Remove only our two fields. Scheduling, dependencies and other local text survive.
+  suffix = suffix.trim() ? ` ${suffix.trim()}` : '';
+  const filter = options.globalFilter?.trim();
+  if (filter && !suffix.includes(filter)) suffix += ` ${filter}`;
+  return suffix + (options.format === 'dataview' ? ` [id:: ${id}] [created:: ${date}]` : ` 🆔 ${id} ➕ ${date}`);
 }
 // Ordinary Markdown escaping remains readable in Live Preview. Only symbols
 // interpreted as Tasks metadata (and Dataview field separators) need entities.
@@ -23,10 +52,25 @@ export function safeTitle(title: string): string
     return /[\\`*_{}\[\]()<>#!|&]/.test(c) ? `\\${c}` : c;
   }).join('').replace(/::/g, '&#58;&#58;');
 }
-export function renderTasks(repo: string, issues: Issue[], eol = '\n'): string {
-  return [...issues].sort((a, b) => a.number - b.number).map(issue => `- [${issue.state === 'closed' ? 'x' : ' '}] [#${issue.number} ${safeTitle(issue.title)}](https://github.com/${repo}/issues/${issue.number})`).join(eol);
+export function renderTasks(repo: string, issues: Issue[], eol = '\n', options = PLAIN_TASKS, previous = ''): string
+{
+  const suffixes = new Map<number, string>();
+  for (const line of previous.split(/\r?\n/)) {
+    const match = /^- \[[^\]]\] .*\]\(https:\/\/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)\)(.*)$/.exec(line);
+    if (match?.[1] === repo) {
+      const number = Number(match[2]);
+      if (suffixes.has(number)) throw new Error('Duplicate imported issue lines; resolve them before syncing.');
+      suffixes.set(number, match[3]);
+    }
+  }
+  return [...issues].sort((a, b) => a.number - b.number).map(issue =>
+  {
+    const suffix = taskMetadata(issue, suffixes.get(issue.number) ?? '', options);
+    return `- [${issue.state === 'closed' ? 'x' : ' '}] [#${issue.number} ${safeTitle(issue.title)}](https://github.com/${repo}/issues/${issue.number})${suffix}`;
+  }).join(eol);
 }
-export function updateBlock(content: string, bodyOffset: number, repo: string, issues: Issue[]): string {
+export function updateBlock(content: string, bodyOffset: number, repo: string, issues: Issue[], options = PLAIN_TASKS): string
+{
   const prefix = content.slice(0, bodyOffset), body = content.slice(bodyOffset);
   const eol = content.includes('\r\n') ? '\r\n' : '\n';
   const matches: { kind: 'start' | 'end'; start: number; end: number }[] = [];
@@ -44,13 +88,14 @@ export function updateBlock(content: string, bodyOffset: number, repo: string, i
     }
     offset += line.length;
   }
-  const tasks = renderTasks(repo, issues, eol);
   if (!matches.length) {
     if (fence) throw new Error('Close the unfinished code block before inserting the issue section.');
+    const tasks = renderTasks(repo, issues, eol, options);
     return content + (content.endsWith(eol + eol) ? '' : content.endsWith(eol) ? eol : eol + eol)
       + `## GitHub Issues${eol}${eol}${START}${eol}${tasks}${tasks ? eol : ''}${END}${eol}`;
   }
   if (matches.length !== 2 || matches[0].kind !== 'start' || matches[1].kind !== 'end') throw new Error('Expected exactly one complete managed marker pair.');
+  const tasks = renderTasks(repo, issues, eol, options, body.slice(matches[0].end, matches[1].start));
   return prefix + body.slice(0, matches[0].end) + eol + tasks + (tasks ? eol : '') + body.slice(matches[1].start);
 }
 export function newIssueNumbers(previous: number[] | undefined, current: number[]): number[] {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { START, END, duplicateRepos, normalizeRepo, renderTasks, updateBlock, newIssueNumbers, safeTitle } from '../src/sync/core';
+import { START, END, duplicateRepos, normalizeRepo, repositoryFromProperty, renderTasks, updateBlock, newIssueNumbers, safeTitle } from '../src/sync/core';
 import { GitHubClient, ApiError, type Issue } from '../src/github/client';
 import { pollForToken, requestDeviceCode, refreshAccessToken, pause, type Http } from '../src/github/auth';
 import { Session } from '../src/github/session';
@@ -11,9 +11,49 @@ import { TFile, MarkdownView, Notice } from './obsidian';
 import { previewPath, previewHtml } from '../src/preview/markdown';
 import { PreviewCache } from '../src/preview/cache';
 import { RepositoryPreview } from '../src/preview/block';
-const fixture: Issue[] = [{ number: 2, title: 'Keep context', state: 'open' }, { number: 1, title: 'Done', state: 'closed' }];
-const issue = (number: number, state = 'open') => ({ number, title: `Issue ${number}`, state, assignees: [{ login: 'tester' }] });
+const fixture: Issue[] = [{ number: 2, title: 'Keep context', state: 'open', createdAt: '2026-11-01T10:00:00Z' }, { number: 1, title: 'Done', state: 'closed', createdAt: '2026-10-01T10:00:00Z' }];
+const issue = (number: number, state = 'open') => ({ number, title: `Issue ${number}`, state, created_at: '2026-11-01T10:00:00Z', assignees: [{ login: 'tester' }] });
 const ok = (json: unknown) => ({ status: 200, json });
+
+test('repository properties accept scalars and select the first valid repository from mixed URL lists', () =>
+{
+  assert.equal(repositoryFromProperty('https://github.com/O/R'), 'o/r');
+  assert.equal(repositoryFromProperty(['https://example.org', null, 'https://github.com/o', 'https://github.com/O/First', 'https://github.com/o/second']), 'o/first');
+  for (const value of [null, {}, [], ['https://github.com/o/r/issues', 'https://evil.test/o/r']]) assert.equal(repositoryFromProperty(value), null);
+  assert.equal(cleanSettings({ repositoryProperty: ' urls ' }).repositoryProperty, 'urls');
+  assert.equal(cleanSettings({ repositoryProperty: ' ' }).repositoryProperty, 'github_repo');
+  assert.equal(cleanSettings(null).respectTasks, true);
+  assert.equal(cleanSettings({ respectTasks: false }).respectTasks, false);
+});
+
+test('Tasks metadata keeps IDs and local planning across issue updates and format changes', () =>
+{
+  const options = { respectTasks: true, format: 'emoji' as const, globalFilter: '#task' };
+  const first = updateBlock('Manual task\n', 0, 'o/r', fixture, options);
+  const ids = [...first.matchAll(/🆔 ([a-z\d]+)/g)].map(m => m[1]);
+  assert.equal(new Set(ids).size, 2);
+  assert.ok(first.includes('➕ 2026-10-01'));
+  assert.ok(first.includes('#task'));
+  assert.equal(updateBlock(first, 0, 'o/r', fixture, options), first);
+  const planned = first.replace('➕ 2026-11-01', '➕ 2026-11-01 ⏳ 2026-12-01 📅 2026-12-02 ⏫ ⛔ dependency #local');
+  const changed = updateBlock(planned, 0, 'o/r', [{ ...fixture[0], title: 'Renamed', state: 'closed' }], options);
+  assert.ok(changed.includes('- [x] [#2 Renamed]'));
+  assert.ok(changed.includes(`🆔 ${ids[1]}`));
+  assert.ok(changed.includes('⏳ 2026-12-01 📅 2026-12-02 ⏫ ⛔ dependency #local'));
+  assert.ok(changed.startsWith('Manual task\n'));
+  const dv = updateBlock(changed, 0, 'o/r', [fixture[0]], { ...options, format: 'dataview' });
+  assert.ok(dv.includes(`[id:: ${ids[1]}] [created:: 2026-11-01]`));
+  assert.equal(updateBlock(dv, 0, 'o/r', [fixture[0]], { ...options, format: 'dataview' }), dv);
+  assert.ok(updateBlock(dv, 0, 'o/r', [fixture[0]], { respectTasks: false, format: 'emoji' }).includes(`[id:: ${ids[1]}]`));
+});
+
+test('plain tasks omit generated metadata and duplicate managed issue lines are rejected', () =>
+{
+  const plain = updateBlock('', 0, 'o/r', fixture);
+  assert.ok(!plain.includes('🆔')); assert.ok(!plain.includes('➕'));
+  const line = renderTasks('o/r', [fixture[0]]);
+  assert.throws(() => updateBlock(`${START}\n${line}\n${line}\n${END}`, 0, 'o/r', fixture), /Duplicate imported/);
+});
 
 test('fresh or blank settings use our public GitHub App identity and retain custom identities', () => {
   assert.equal(cleanSettings(null).clientId, ISSUE_BRIDGE_APP.clientId);
@@ -28,7 +68,7 @@ test('repository normalization rejects credentials, arbitrary hosts and subpaths
   for (const value of [undefined, ['https://github.com/o/r'], 'https://evil.test/o/r', 'http://github.com/o/r', 'https://user@github.com/o/r', 'https://github.com/o/r/issues', 'https://github.com/o/r?q=x', 'https://github.com/o/r#x']) assert.throws(() => normalizeRepo(value));
 });
 test('task renderer handles state and escapes hostile Markdown and Tasks metadata', () => {
-  const result = renderTasks('owner/repo', [{ number: 1, title: 'A](https://evil.test)\n- [ ] 📅 2030-01-01 <!-- issue-bridge:end --> <script>', state: 'closed' }]);
+  const result = renderTasks('owner/repo', [{ number: 1, title: 'A](https://evil.test)\n- [ ] 📅 2030-01-01 <!-- issue-bridge:end --> <script>', state: 'closed', createdAt: '2026-11-01T10:00:00Z' }]);
   assert.equal(result.split('\n').length, 1);
   assert.ok(result.startsWith('- [x] [#1 A\\]'));
   assert.ok(!result.includes('📅')); assert.ok(!result.includes('<script>')); assert.ok(!result.includes(END));
@@ -183,6 +223,43 @@ function runtime() {
     setIssues: (issues: ReturnType<typeof issue>[]) => { activeIssues = issues; }, setFail: () => { fail = true; },
     beforeFetch: (fn: () => void) => { beforeFetch = fn; } };
 }
+
+test('runtime uses the custom list property for sync and README, reads Tasks configuration and preserves planning', async () =>
+{
+  const r = runtime(); r.plugin.settings.repositoryProperty = 'urls';
+  r.docs.set(r.file.path, '---\n' + JSON.stringify({ urls: ['https://example.org', 'https://github.com/o/r', 'https://github.com/other/repo'] }) + '\n---\nLocal text\n');
+  r.app.vault.configDir = '.custom-config';
+  r.app.vault.adapter = {
+    exists: async (path: string) =>
+    {
+      assert.equal(path, '.custom-config/plugins/obsidian-tasks-plugin/data.json'); return true;
+    },
+    read: async () => JSON.stringify({ taskFormat: 'dataview', globalFilter: '#task' })
+  };
+  await r.plugin.sync(false);
+  let content = r.docs.get(r.file.path)!;
+  assert.ok(content.includes('[created:: 2026-11-01]')); assert.ok(content.includes('#task'));
+  assert.equal(r.writes(), 1);
+  await r.plugin.sync(false); assert.equal(r.writes(), 1);
+  content = content.replace('[created:: 2026-11-01]', '[created:: 2026-11-01] [scheduled:: 2026-12-01]');
+  r.docs.set(r.file.path, content);
+  r.setIssues([issue(1, 'closed')]); await r.plugin.sync(false);
+  assert.ok(r.docs.get(r.file.path)!.includes('[scheduled:: 2026-12-01]'));
+  r.internal.http = async () => ok(markdownFile());
+  assert.equal((await r.internal.repositoryPreview(r.file.path, 'README.md', false)).markdown, '# Hello\n\nWorld');
+});
+
+test('runtime refuses writes when Tasks configuration is unreadable or settings change during fetch', async () =>
+{
+  const r = runtime();
+  r.app.vault.adapter = { exists: async () => true, read: async () => '{broken' };
+  await r.plugin.sync(false); assert.equal(r.writes(), 0);
+  r.plugin.settings.respectTasks = false;
+  await r.plugin.sync(false); assert.equal(r.writes(), 1);
+  const other = runtime();
+  other.beforeFetch(() => { other.plugin.settings.respectTasks = false; });
+  await other.plugin.sync(false); assert.equal(other.writes(), 0);
+});
 test('runtime initial import is quiet, subsequent additions remain unread, and unchanged sync never processes', async () => {
   const r = runtime();
   await r.plugin.sync(false);

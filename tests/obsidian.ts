@@ -18,6 +18,7 @@ export function getFrontMatterInfo(content: string) {
   return { exists: !!match, frontmatter: match?.[1] ?? '', contentStart: match?.[0].length ?? 0 };
 }
 export function parseYaml(content: string) {
+  if (content.trim().startsWith('{')) return JSON.parse(content);
   const match = /^github_repo:\s*(.+)$/m.exec(content);
   return match ? { github_repo: match[1].trim().replace(/^['"]|['"]$/g, '') } : {};
 }

@@ -1,23 +1,39 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type IssueBridge from './main';
 import { ISSUE_BRIDGE_APP } from './github/app';
-export interface Settings { clientId: string; autoSync: boolean; startupSync: boolean; intervalMinutes: number; notifyNew: boolean; excludedFolders: string }
-export const DEFAULTS: Settings = { clientId: ISSUE_BRIDGE_APP.clientId, autoSync: true, startupSync: true, intervalMinutes: 5, notifyNew: true, excludedFolders: 'archives, templates, scripts, libraries, inbound' };
-export function cleanSettings(input: Partial<Settings> | null): Settings {
+export interface Settings { clientId: string; autoSync: boolean; startupSync: boolean; intervalMinutes: number; notifyNew: boolean; excludedFolders: string; repositoryProperty: string; respectTasks: boolean }
+export const DEFAULTS: Settings = { clientId: ISSUE_BRIDGE_APP.clientId, autoSync: true, startupSync: true, intervalMinutes: 5, notifyNew: true, excludedFolders: 'archives, templates, scripts, libraries, inbound', repositoryProperty: 'github_repo', respectTasks: true };
+export function cleanSettings(input: Partial<Settings> | null): Settings
+{
   const s = input ?? {};
   return { clientId: typeof s.clientId === 'string' && s.clientId.trim() ? s.clientId.trim() : DEFAULTS.clientId,
     autoSync: typeof s.autoSync === 'boolean' ? s.autoSync : DEFAULTS.autoSync,
     startupSync: typeof s.startupSync === 'boolean' ? s.startupSync : DEFAULTS.startupSync,
     notifyNew: typeof s.notifyNew === 'boolean' ? s.notifyNew : DEFAULTS.notifyNew,
+    repositoryProperty: typeof s.repositoryProperty === 'string' && s.repositoryProperty.trim() ? s.repositoryProperty.trim() : DEFAULTS.repositoryProperty,
+    respectTasks: typeof s.respectTasks === 'boolean' ? s.respectTasks : DEFAULTS.respectTasks,
     intervalMinutes: typeof s.intervalMinutes === 'number' && Number.isFinite(s.intervalMinutes) ? Math.max(1, Math.min(1440, Math.round(s.intervalMinutes))) : DEFAULTS.intervalMinutes,
     excludedFolders: typeof s.excludedFolders === 'string' ? s.excludedFolders : DEFAULTS.excludedFolders };
 }
-export class IssueBridgeSettings extends PluginSettingTab {
-  constructor(app: App, private plugin: IssueBridge) { super(app, plugin); }
-  display() {
+export class IssueBridgeSettings extends PluginSettingTab
+{
+  constructor(app: App, private plugin: IssueBridge)
+  { super(app, plugin); }
+  display()
+  {
     const p = this.plugin, el = this.containerEl;
     el.empty(); el.createEl('h2', { text: 'Issue Bridge' });
-    el.createEl('p', { text: 'Assigned GitHub issues become native tasks in notes with a github_repo property. GitHub is authoritative: local changes inside the managed section are replaced on sync.' });
+    el.createEl('p', { text: 'Assigned GitHub issues become native tasks in mapped notes. GitHub controls titles and completion; local planning metadata is preserved.' });
+    new Setting(el).setName('Repository property').setDesc('Frontmatter property containing a repository URL or URL list, for example urls. The first valid GitHub repository URL is used. Also applies to README blocks.')
+      .addText(t => t.setPlaceholder('github_repo').setValue(p.settings.repositoryProperty).onChange(async value =>
+      {
+        p.settings.repositoryProperty = value.trim() || DEFAULTS.repositoryProperty; await p.saveSettings();
+      }));
+    new Setting(el).setName('Respect Obsidian Tasks').setDesc('Add the GitHub issue creation date and a stable task ID. Uses the saved Tasks emoji or Dataview format and global filter; defaults to emoji without Tasks. Local dates, priorities and IDs are retained even when disabled.')
+      .addToggle(t => t.setValue(p.settings.respectTasks).onChange(async value =>
+      {
+        p.settings.respectTasks = value; await p.saveSettings();
+      }));
     el.createEl('p', { text: 'Private issue titles and links are saved in your notes and follow the vault’s sync and sharing settings.' });
     new Setting(el).setName('Repository access').setDesc('Install Issue Bridge by Committed Sins on selected repositories before syncing. The current test app is limited to the Committed Sins organization and requests Issues: read-only.')
       .addButton(b => b.setButtonText('Choose repositories on GitHub').onClick(() => window.open(ISSUE_BRIDGE_APP.installUrl, '_blank', 'noopener,noreferrer')));
@@ -47,7 +63,7 @@ export class IssueBridgeSettings extends PluginSettingTab {
       }))
       .addButton(b => b.setButtonText('Show new issues').onClick(() => p.showNewIssues(() => this.display())));
     el.createEl('h3', { text: 'Link a note' });
-    el.createEl('pre', { text: '---\ngithub_repo: https://github.com/owner/repository\n---' });
+    el.createEl('pre', { text: `---\n${p.settings.repositoryProperty}: https://github.com/owner/repository\n---` });
     el.createEl('p', { text: 'Use one active note per repository. First sync appends a GitHub Issues section. Closed assigned issues stay visible; issues no longer assigned disappear after a complete successful fetch. Removing or changing the mapping leaves the old generated section until you remove it or sync the new mapping.' });
   }
 }

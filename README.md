@@ -1,50 +1,32 @@
-# Issue Bridge for Obsidian
+# Issue Bridge
 
-**Connect your issues. Keep your context.**
+Sync GitHub issues assigned to you into existing Obsidian notes. Includes closed issues, new-assignment notifications and collapsible README previews.
 
-Issue Bridge connects GitHub repositories to existing Obsidian notes and synchronizes assigned issues as native Markdown tasks. Keep development work in the notes where your projects live, with tasks that Obsidian Tasks can query.
+## Setup
 
-Developed by **Committed Sins — Michael J. Stallinger**.
-
-**Version 0.1.2: initial public release. Desktop acceptance passed on Windows / Obsidian 1.15.1 in a separate Test vault. Mobile, live expired-token renewal and private README access remain unverified.**
-
-Download the three plugin files from [Releases](https://github.com/committed-sins/obsidian-plugin-issue-bridge/releases/latest) into `<vault>/.obsidian/plugins/issue-bridge/`, then enable **Issue Bridge**. Repository installation through BRAT is also supported. This plugin is not yet listed in the community directory. See [the desktop validation record](docs/validation-2026-11-14.md).
-
-## Preview behavior
-
-- Link a note to a repository through the `github_repo` frontmatter property.
-- Import issues assigned to the connected GitHub account, including closed issues.
-- Synchronize issue titles, URLs and open/closed states in a dedicated managed section.
-- Keep frontmatter and all content outside that section unchanged.
-- Support manual and periodic synchronization, retaining the last successful result on errors.
-- Target desktop and mobile, with one GitHub account per installation in the MVP.
-
-The settings page configures GitHub App sign-in, startup/resume checks, the polling interval, notifications and excluded folders. The first import establishes a device-local baseline. Later newly assigned issues produce one notice per sync and remain in an unread list until acknowledged through the status bar or **Show new assigned issues** command. Default polling is every five minutes while Obsidian is running; no background push service is included.
-
-GitHub is the source of truth in v0.1. Local edits to imported tasks, including checkbox changes, are replaced by the next successful sync. Closed assigned issues remain visible; issues no longer assigned to the account are removed only after a complete successful fetch.
+1. Install with BRAT or copy `main.js`, `manifest.json` and `styles.css` from [Releases](https://github.com/committed-sins/obsidian-plugin-issue-bridge/releases/latest) into `<vault>/.obsidian/plugins/issue-bridge/`.
+2. Enable Issue Bridge, choose repository access in settings and sign in.
+3. Set **Repository property** to your frontmatter property (`github_repo` by default, for example `urls`):
 
 ```yaml
----
-github_repo: https://github.com/committed-sins/obsidian-plugin-issue-bridge
----
+urls:
+  - https://example.org
+  - https://github.com/owner/repository
 ```
 
-Illustrative generated section; the issues below are examples:
+A single URL works too. The first valid GitHub repository URL wins. Use one note per repository; duplicate mappings are skipped.
 
-```markdown
-## GitHub Issues
+## Tasks
 
-<!-- issue-bridge:start -->
-- [ ] [#12 Support multiple repositories](https://github.com/committed-sins/obsidian-plugin-issue-bridge/issues/12)
-- [x] [#8 Improve authentication](https://github.com/committed-sins/obsidian-plugin-issue-bridge/issues/8)
-<!-- issue-bridge:end -->
-```
+Imported tasks display a small GitHub icon. **Respect Obsidian Tasks** is enabled by default: it adds a stable task ID and the issue's creation date (UTC), using the saved Tasks emoji or Dataview format and global filter. Without Tasks, it uses emoji. Plan tasks with Tasks as usual: local scheduling, priorities, dependencies, tags and IDs survive synchronization. Disabling the option stops adding metadata and retains existing metadata.
 
-The initial design allows one active note per repository in a vault. Duplicate mappings produce a warning and leave all affected notes unchanged.
+GitHub controls issue titles and open/closed status. Unassigned issues disappear after a successful complete fetch. Notes outside the managed section remain unchanged. Recurring tasks and automatic deletion are unsuitable for imported issues because GitHub controls their lifecycle.
 
-## Collapsible repository Markdown
+Checks run every five minutes while Obsidian is open, with startup/resume checks and manual sync. New assignments appear in a notice and the status-bar unread list; the first import is quiet.
 
-In a saved note with a `github_repo` property, add:
+## README preview
+
+Add this block to a mapped note:
 
 ````markdown
 ```issue-bridge
@@ -52,26 +34,21 @@ README.md
 ```
 ````
 
-The block renders a collapsed, read-only Markdown preview from that repository's default branch. Expand it to fetch the file; **Refresh** reloads it and **View on GitHub** opens the source. A relative Markdown path such as `docs/overview.md` also works. The preview never writes note or repository content and does not create imported tasks.
+Expand to load; refresh or open the source on GitHub. Other relative `.md` paths work. The preview is read-only. Public files work without sign-in; private files require **Contents: read-only**. Remote images are links, and remote HTML or plugin code is not executed.
 
-Public files work without sign-in. Private files use the connected account and additionally require **Contents: read-only** on the GitHub App; the current Issues-only app permission is not expanded automatically. The file limit is 200 KiB. Content is cached only in memory for up to five minutes, with at most 32 retained entries. Images appear as links to avoid automatic external downloads. Remote HTML, executable plugin code blocks and interactive checkboxes are not rendered as active content. Relative links resolve against the GitHub source file.
+## Access and verification
 
-## Identity and scope
+The built-in GitHub App currently supports **Committed Sins only**. For other accounts, configure your own Device Flow-enabled GitHub App with **Issues: read-only**. Tokens stay in Obsidian SecretStorage; imported issue titles and links are saved in your vault.
 
-- Name: **Issue Bridge**
-- Plugin ID: `issue-bridge`
-- Repository: `committed-sins/obsidian-plugin-issue-bridge`
-- Implementation language: TypeScript
-- License: MIT
-- Platform target: desktop and mobile; desktop acceptance passed, mobile validation is pending.
+Release artifacts have SHA-256 checksums and GitHub build-provenance attestations starting with 0.1.3:
 
-The repository name follows the existing `obsidian-plugin-*` convention. The original concept used the shorter `obsidian-issue-bridge` spelling.
+```sh
+gh attestation verify main.js --repo committed-sins/obsidian-plugin-issue-bridge
+```
 
-Bidirectional synchronization, multiple accounts, other trackers, pull requests, GitHub Projects, label/milestone mapping and custom task templates remain future work. Issue Bridge is independent of the other Committed Sins plugins.
+Version 0.1.2 passed desktop acceptance. The 0.1.3 additions have automated coverage; visual verification, mobile, live token renewal and private README access remain pending. Not yet in the community directory.
 
-## Setup and development
-
-See [setup](docs/setup.md) for GitHub App configuration, sign-in, repository-note mapping and acceptance checks. The built-in app currently installs only in Committed Sins. Other accounts/organizations can use their own Device Flow-enabled GitHub App client ID with Issues: read-only and installations on the intended repositories. Enable/reload **Issue Bridge** manually in the **Test** vault after local deployment.
+## Development
 
 ```sh
 npm ci
@@ -79,14 +56,4 @@ npm run check
 npm run deploy
 ```
 
-Deployment uses `OBSIDIAN_VAULT` or ignored `.env.local`, copying only the three build artifacts and preserving settings, activation and notes. This checkout targets `C:/Users/mj/Obsidian/Test`.
-
-Authentication and its dialog are adapted from a pinned MIT-licensed GitHub Enterprise Sync commit. See [third-party notices](THIRD_PARTY_NOTICES.md). The upstream app identity and plaintext token store are not used.
-
-## Documents
-
-- [MVP requirements and acceptance criteria](docs/requirements.md)
-- [Architecture, authentication decisions and planned source layout](docs/architecture.md)
-- [Implementation roadmap](docs/roadmap.md)
-
-Authentication uses GitHub App device authorization with user access tokens and renewal. The registered **Issue Bridge by Committed Sins** app is the default; its initial installation scope is limited to Committed Sins. Select **Choose repositories on GitHub** in settings to install or request access before signing in. Access/refresh tokens are stored together in Obsidian SecretStorage, never in note files or plugin settings. SecretStorage's platform protections are provided by Obsidian; this is not a claim of encryption at rest on every platform. No client secret is embedded. GitHub.com is the only supported host in this initial preview.
+Deployment uses `OBSIDIAN_VAULT` or ignored `.env.local` and preserves settings and notes. See [setup](docs/setup.md), [changelog](CHANGELOG.md) and [third-party notices](THIRD_PARTY_NOTICES.md). MIT, Committed Sins / Michael J. Stallinger.

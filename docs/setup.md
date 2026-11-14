@@ -1,5 +1,15 @@
 # Test preview setup
 
+## Additions in 0.1.3
+
+**Repository property** selects the exact frontmatter key used by both sync and README blocks. Default: `github_repo`; set it to `urls` to reuse an existing property. A scalar URL and a YAML list are supported. Non-repository entries are ignored; the first valid GitHub repository URL wins. One active note per repository still applies. Changing the configured property does not remove old generated sections.
+
+**Respect Obsidian Tasks** defaults to on, including for existing installations. Each imported task receives a random stable alphanumeric ID and the GitHub issue creation date (UTC). Existing IDs and creation dates are retained. The saved configuration in `<configDir>/plugins/obsidian-tasks-plugin/data.json` supplies the emoji/Dataview format and global filter; without it, emoji is used. Unsupported or unreadable configuration defers sync instead of overwriting notes. Tasks configuration changes take effect after Tasks saves them and the next sync runs.
+
+Local text after the imported issue link is preserved, including scheduled/due dates, priorities, dependencies and tags. GitHub still controls title, link and completion state. Turning integration off keeps existing metadata. Avoid recurrence and automatic task deletion for imported issues: GitHub remains authoritative for membership and state. Removing an issue assignment removes its imported line, including local planning metadata.
+
+GitHub icons use local Octicons SVG masks in editor decorations and rendered task links; no external requests or icon plugin are required. These additions have automated coverage but no new live UI verification. Release 0.1.3 introduces build-provenance attestations generated and verified before draft release creation.
+
 Issue Bridge 0.1.2 is the first public release. Real device login and core desktop behavior were validated on Windows / Obsidian 1.15.1; see validation-2026-11-14.md. Mobile, expired-token renewal and private README access still need live validation. The local test deployment target is `C:/Users/mj/Obsidian/Test`, selected in ignored `.env.local`.
 
 ## GitHub App

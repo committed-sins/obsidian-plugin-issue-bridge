@@ -4,10 +4,11 @@ import { GitHubClient, ApiError } from './github/client';
 import type { Http } from './github/auth';
 import { DeviceFlowModal } from './deviceFlowModal';
 import { cleanSettings, DEFAULTS, IssueBridgeSettings, type Settings } from './settings';
-import { duplicateRepos, newIssueNumbers, normalizeRepo, updateBlock, type Mapping } from './sync/core';
+import { duplicateRepos, newIssueNumbers, repositoryFromProperty, updateBlock, type Mapping, type TaskOptions } from './sync/core';
 import { registerRepositoryPreview } from './preview/block';
 import { PreviewCache } from './preview/cache';
 import { previewPath } from './preview/markdown';
+import { sourceIcons } from './sync/icons';
 interface Unread { repo: string; number: number; path: string }
 interface LocalState { secretId: string; snapshots: Record<string, number[]>; unread: Unread[]; lastSync: number; summary: string }
 const LOCAL_KEY = 'issue-bridge-v1';
@@ -40,6 +41,7 @@ export default class IssueBridge extends Plugin {
     if (!this.app.secretStorage) { new Notice('Issue Bridge requires Obsidian SecretStorage. Update Obsidian before signing in.'); return; }
     this.session = new Session(this.http, this.app.secretStorage, this.local.secretId, () => this.alive);
     registerRepositoryPreview(this, (note, path, force) => this.repositoryPreview(note, path, force));
+    this.registerEditorExtension(sourceIcons);
     this.addSettingTab(new IssueBridgeSettings(this.app, this));
     const changed = () => { this.vaultRevision++; };
     this.registerEvent(this.app.vault.on('modify', changed));
@@ -64,12 +66,13 @@ export default class IssueBridge extends Plugin {
     this.schedule();
   }
   onunload() { this.alive = false; this.epoch++; this.previews.clear(); if (this.timer) window.clearInterval(this.timer); this.modal?.close(); }
-  private async repositoryPreview(note: string, path: string, force: boolean) {
+  private async repositoryPreview(note: string, path: string, force: boolean)
+  {
     path = previewPath(path);
     const file = this.app.vault.getAbstractFileByPath(note);
-    if (!(file instanceof TFile)) throw new Error('Save this note and add its github_repo property first.');
+    if (!(file instanceof TFile)) throw new Error(`Save this note and add its ${this.settings.repositoryProperty} property first.`);
     const repo = this.mapping(await this.app.vault.read(file))?.repo;
-    if (!repo) throw new Error('Add github_repo: https://github.com/owner/repository to this note.');
+    if (!repo) throw new Error(`Add a GitHub repository URL to this note’s ${this.settings.repositoryProperty} property.`);
     const epoch = this.epoch, active = () => this.alive && this.epoch === epoch;
     if (!active()) throw new Error('Preview cancelled.');
     const result = await this.previews.get(`${epoch}:${repo}:${path}`, force, async () => {
@@ -154,12 +157,32 @@ export default class IssueBridge extends Plugin {
     };
     modal.open();
   }
-  private mapping(content: string): { repo: string; bodyOffset: number } | null {
+  private mapping(content: string): { repo: string; bodyOffset: number } | null
+  {
     const info = getFrontMatterInfo(content);
     if (!info.exists) return null;
     const fm = parseYaml(info.frontmatter);
-    if (!fm || typeof fm !== 'object' || !Object.prototype.hasOwnProperty.call(fm, 'github_repo')) return null;
-    return { repo: normalizeRepo(fm.github_repo), bodyOffset: info.contentStart };
+    const property = this.settings.repositoryProperty;
+    if (!fm || typeof fm !== 'object' || !Object.prototype.hasOwnProperty.call(fm, property)) return null;
+    const repo = repositoryFromProperty(fm[property]);
+    return repo ? { repo, bodyOffset: info.contentStart } : null;
+  }
+  private async taskOptions(): Promise<TaskOptions>
+  {
+    const result: TaskOptions = { respectTasks: this.settings.respectTasks, format: 'emoji' };
+    if (!result.respectTasks) return result;
+    const adapter = this.app.vault.adapter;
+    const path = `${this.app.vault.configDir}/plugins/obsidian-tasks-plugin/data.json`;
+    if (!adapter || !await adapter.exists(path)) return result;
+    // Read saved public configuration only; no dependency on Tasks internals.
+    const config = JSON.parse(await adapter.read(path));
+    if (config.taskFormat === 'dataview') result.format = 'dataview';
+    else if (config.taskFormat && config.taskFormat !== 'tasksPluginEmoji') throw new Error('Unsupported Tasks format; previous tasks retained.');
+    if (typeof config.globalFilter === 'string' && config.globalFilter.trim()) {
+      if (/[\r\n<>]/.test(config.globalFilter)) throw new Error('Unsupported Tasks global filter; previous tasks retained.');
+      result.globalFilter = config.globalFilter.trim();
+    }
+    return result;
   }
   private excluded(path: string) {
     return this.settings.excludedFolders.split(',').map(x => x.trim().replace(/^\/+|\/+$/g, '')).filter(Boolean).some(folder => path === folder || path.startsWith(folder + '/'));
@@ -170,7 +193,8 @@ export default class IssueBridge extends Plugin {
       return view instanceof MarkdownView && view.file === file && view.getViewData() !== content;
     });
   }
-  async sync(manual: boolean) {
+  async sync(manual: boolean)
+  {
     if (!this.alive || this.busy || this.signingIn) { if (manual) new Notice('Issue Bridge is already busy.'); return; }
     if (!this.hasCredential()) { if (manual) new Notice('Sign in through Settings → Issue Bridge first.'); return; }
     if (Date.now() < this.retryAt) { if (manual) new Notice('GitHub rate limit: wait until the retry time shown in Issue Bridge settings.'); return; }
@@ -179,17 +203,20 @@ export default class IssueBridge extends Plugin {
     let updated = 0, added = 0, completed = 0;
     const warnings: string[] = [];
     try {
+      const configuration = JSON.stringify(this.settings);
+      const taskOptions = await this.taskOptions();
+      if (JSON.stringify(this.settings) !== configuration) throw new Error('Settings changed during sync; retry.');
       const mappings: Mapping[] = [];
       for (const file of this.app.vault.getMarkdownFiles()) {
         if (!active()) return;
         if (this.excluded(file.path)) continue;
         const content = await this.app.vault.read(file);
         try { const m = this.mapping(content); if (m) mappings.push({ path: file.path, content, ...m }); }
-        catch { warnings.push(`${file.path}: invalid frontmatter or github_repo; skipped.`); }
+        catch { warnings.push(`${file.path}: invalid frontmatter or repository property; skipped.`); }
       }
       const duplicates = duplicateRepos(mappings);
       if (!mappings.length) {
-        this.local.summary = warnings.length ? warnings.join('\n') : 'No mapped notes. Add github_repo to a note to start importing.';
+        this.local.summary = warnings.length ? warnings.join('\n') : `No mapped notes. Add a GitHub repository URL to ${this.settings.repositoryProperty} to start importing.`;
       } else {
         const token = await this.session.token();
         const client = new GitHubClient(this.http, token, active);
@@ -215,10 +242,11 @@ export default class IssueBridge extends Plugin {
               catch { /* Invalid mappings are reported by the main scan. */ }
             }
             if (!active() || revision !== this.vaultRevision || owners !== 1) throw new Error('Notes or repository mappings changed during sync; retry.');
-            const next = updateBlock(mapping.content, mapping.bodyOffset, mapping.repo, issues);
+            const next = updateBlock(mapping.content, mapping.bodyOffset, mapping.repo, issues, taskOptions);
             let wrote = false;
             const check = (current: string) => {
               if (!active() || this.excluded(file.path)) throw new Error('Sync cancelled.');
+              if (JSON.stringify(this.settings) !== configuration) throw new Error('Settings changed during sync; retry.');
               if (revision !== this.vaultRevision) throw new Error('Notes changed during sync; retry.');
               if (current !== mapping.content || this.dirty(file, current)) throw new Error('Note changed during sync; retry after saving.');
               const latest = this.mapping(current);

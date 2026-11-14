@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.3 — 2026-11-14
+
+- Configurable repository property accepting a scalar URL or mixed URL list; select the first valid GitHub repository for issue sync and README previews.
+- Local GitHub Octocat icon in editor decorations and rendered task links.
+- Tasks integration enabled by default: stable IDs, issue creation dates, saved emoji/Dataview format and global filter. Preserve local planning metadata across issue updates and when disabled.
+- Generate and verify build-provenance attestations for all four release artifacts; shorten README.
+- Automated coverage added; no new live UI verification.
+
 ## 0.1.2 — 2026-11-14
 
 First public release, following desktop acceptance in the separate Test vault.

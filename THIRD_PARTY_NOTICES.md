@@ -17,4 +17,6 @@ Original source/license references are pinned to the commit above. Importing fut
 
 ## Markdown rendering dependencies
 
+The GitHub task icon is Primer Octicons `mark-github-16.svg` (GitHub, MIT), embedded locally in styles.css. Its original license is retained in vendor/octicons/LICENSE and the distributed main.js banner. Source: https://github.com/primer/octicons/blob/main/icons/mark-github-16.svg.
+
 The read-only repository preview uses `markdown-it` and its runtime dependencies from npm. Exact versions are recorded in package-lock.json. Original license files for every production dependency are collected from the installed packages and embedded in the distributed main.js banner during the build. No dependency source or license is replaced with Committed Sins authorship. Obsidian provides the final HTML-to-DOM sanitizer at runtime.

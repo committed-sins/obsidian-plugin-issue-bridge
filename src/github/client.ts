@@ -1,5 +1,5 @@
 import type { Http } from './auth';
-export interface Issue { number: number; title: string; state: 'open' | 'closed' }
+export interface Issue { number: number; title: string; state: 'open' | 'closed'; createdAt: string }
 export interface RepositoryMarkdown { markdown: string; url: string }
 export class ApiError extends Error {
   constructor(public status: number, public retryAt = 0) { super(`GitHub request failed (HTTP ${status}). ${status === 401 ? 'Sign in again.' : status === 403 || status === 404 ? 'Check app installation and Issues: read access.' : 'Previous tasks were retained.'}`); }
@@ -40,7 +40,8 @@ export class GitHubClient {
       return { markdown: new TextDecoder('utf-8', { fatal: true }).decode(bytes), url: url.href };
     } catch { throw new Error('The repository file is not a valid UTF-8 Markdown file.'); }
   }
-  async assignedIssues(repo: string, login: string): Promise<Issue[]> {
+  async assignedIssues(repo: string, login: string): Promise<Issue[]>
+  {
     const issues = new Map<number, Issue>();
     for (let page = 1; page <= 1000; page++) {
       const json = await this.get(`/repos/${repo}/issues?state=all&assignee=${encodeURIComponent(login)}&sort=created&direction=asc&per_page=100&page=${page}`);
@@ -49,9 +50,10 @@ export class GitHubClient {
         if (!item || typeof item !== 'object') throw new Error('GitHub returned an invalid issue.');
         if ('pull_request' in item) continue;
         if (!Number.isSafeInteger(item.number) || item.number <= 0 || typeof item.title !== 'string' || !['open', 'closed'].includes(item.state)
+          || typeof item.created_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(item.created_at) || !Number.isFinite(Date.parse(item.created_at))
           || !Array.isArray(item.assignees) || !item.assignees.some((a: { login?: string }) => typeof a?.login === 'string' && a.login.toLowerCase() === login.toLowerCase())) throw new Error('GitHub returned inconsistent issue data. Previous tasks were retained.');
         if (issues.has(item.number)) throw new Error('Issue pages changed during sync. Retry to get a complete snapshot.');
-        issues.set(item.number, { number: item.number, title: item.title, state: item.state });
+        issues.set(item.number, { number: item.number, title: item.title, state: item.state, createdAt: item.created_at });
       }
       if (json.length < 100) return [...issues.values()].sort((a, b) => a.number - b.number);
     }
