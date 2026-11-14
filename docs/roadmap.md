@@ -13,9 +13,11 @@
 
 ## Next
 
+Desktop acceptance completed on 2026-11-14; see validation-2026-11-14.md. Version 0.1.2 is the first public GitHub release. Real sign-in, import/state updates, notifications, plugin-reload persistence and README rendering have live evidence. Community-directory submission, mobile checks, expired-token renewal and private README access remain follow-up work.
+
 Preview 0.1.1 also implements collapsible read-only repository Markdown blocks, with anonymous public reads, manual refresh, safe rendering and memory-only caching. Actual Reading view/Live Preview and mobile rendering require live checks. Private README access needs a separately approved Contents: read-only permission change.
 
-1. Complete the GitHub App's selected-repository installation/approval and validate real sign-in/renewal with Issues: read-only access.
+1. Finish live validation of expired-token renewal. The selected-repository installation and real device sign-in are working for the desktop test.
 2. Enable the plugin manually in the Test vault and run setup.md's live checks: note/editor safety, native/queried Tasks, close/reopen/unassign, duplicates, offline and new-assignment notifications.
 3. Verify actual mobile networking, SecretStorage, startup/resume and OS backgrounding. Browser/host stubs do not cover those behaviors.
 4. Refine settings UX based on feedback; check accessibility and large-vault performance.

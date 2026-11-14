@@ -10,3 +10,4 @@
 - Run `npm ci` and `npm run check` on a fresh checkout. Report automated checks separately from live desktop/mobile verification.
 - Retain the original upstream MIT notices in source and built artifacts. Record the upstream commit and adaptations in THIRD_PARTY_NOTICES.md.
 - The authorized initial deployment target is `C:/Users/mj/Obsidian/Test`; use ignored `.env.local` or `OBSIDIAN_VAULT`. Copy only the three build artifacts and preserve settings and activation.
+- Use Allman opening braces for authored functions, block-bodied arrows, methods, constructors, classes and comparable declarations. Preserve existing control-flow/object-literal brace placement. Never reformat generated or third-party files.

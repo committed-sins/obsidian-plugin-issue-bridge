@@ -6,7 +6,9 @@ Issue Bridge connects GitHub repositories to existing Obsidian notes and synchro
 
 Developed by **Committed Sins — Michael J. Stallinger**.
 
-**Status: development preview 0.1.1, deployed to the Test vault. Automated checks pass; real GitHub App sign-in and live desktop/mobile validation are pending. No public release yet.**
+**Version 0.1.2: initial public release. Desktop acceptance passed on Windows / Obsidian 1.15.1 in a separate Test vault. Mobile, live expired-token renewal and private README access remain unverified.**
+
+Download the three plugin files from [Releases](https://github.com/committed-sins/obsidian-plugin-issue-bridge/releases/latest) into `<vault>/.obsidian/plugins/issue-bridge/`, then enable **Issue Bridge**. Repository installation through BRAT is also supported. This plugin is not yet listed in the community directory. See [the desktop validation record](docs/validation-2026-11-14.md).
 
 ## Preview behavior
 
@@ -61,7 +63,7 @@ Public files work without sign-in. Private files use the connected account and a
 - Repository: `committed-sins/obsidian-plugin-issue-bridge`
 - Implementation language: TypeScript
 - License: MIT
-- Platform target: desktop and mobile; live verification is pending.
+- Platform target: desktop and mobile; desktop acceptance passed, mobile validation is pending.
 
 The repository name follows the existing `obsidian-plugin-*` convention. The original concept used the shorter `obsidian-issue-bridge` spelling.
 
@@ -69,7 +71,7 @@ Bidirectional synchronization, multiple accounts, other trackers, pull requests,
 
 ## Setup and development
 
-See [test preview setup](docs/setup.md) for GitHub App registration, sign-in, repository-note mapping and live acceptance checks. Enable/reload **Issue Bridge** manually in the **Test** vault after deployment.
+See [setup](docs/setup.md) for GitHub App configuration, sign-in, repository-note mapping and acceptance checks. The built-in app currently installs only in Committed Sins. Other accounts/organizations can use their own Device Flow-enabled GitHub App client ID with Issues: read-only and installations on the intended repositories. Enable/reload **Issue Bridge** manually in the **Test** vault after local deployment.
 
 ```sh
 npm ci

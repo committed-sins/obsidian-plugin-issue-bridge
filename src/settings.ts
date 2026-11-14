@@ -45,7 +45,7 @@ export class IssueBridgeSettings extends PluginSettingTab {
       .addButton(b => b.setButtonText('Sync now').setCta().setDisabled(p.busy || p.signingIn).onClick(async () => {
         b.setDisabled(true); await p.sync(true); this.display();
       }))
-      .addButton(b => b.setButtonText('Show new issues').onClick(() => p.showNewIssues()));
+      .addButton(b => b.setButtonText('Show new issues').onClick(() => p.showNewIssues(() => this.display())));
     el.createEl('h3', { text: 'Link a note' });
     el.createEl('pre', { text: '---\ngithub_repo: https://github.com/owner/repository\n---' });
     el.createEl('p', { text: 'Use one active note per repository. First sync appends a GitHub Issues section. Closed assigned issues stay visible; issues no longer assigned disappear after a complete successful fetch. Removing or changing the mapping leaves the old generated section until you remove it or sync the new mapping.' });

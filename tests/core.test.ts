@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { START, END, duplicateRepos, normalizeRepo, renderTasks, updateBlock, newIssueNumbers } from '../src/sync/core';
+import { START, END, duplicateRepos, normalizeRepo, renderTasks, updateBlock, newIssueNumbers, safeTitle } from '../src/sync/core';
 import { GitHubClient, ApiError, type Issue } from '../src/github/client';
 import { pollForToken, requestDeviceCode, refreshAccessToken, pause, type Http } from '../src/github/auth';
 import { Session } from '../src/github/session';
@@ -30,9 +30,14 @@ test('repository normalization rejects credentials, arbitrary hosts and subpaths
 test('task renderer handles state and escapes hostile Markdown and Tasks metadata', () => {
   const result = renderTasks('owner/repo', [{ number: 1, title: 'A](https://evil.test)\n- [ ] 📅 2030-01-01 <!-- issue-bridge:end --> <script>', state: 'closed' }]);
   assert.equal(result.split('\n').length, 1);
-  assert.ok(result.startsWith('- [x] [#1 A&#93;'));
+  assert.ok(result.startsWith('- [x] [#1 A\\]'));
   assert.ok(!result.includes('📅')); assert.ok(!result.includes('<script>')); assert.ok(!result.includes(END));
   assert.ok(result.endsWith('](https://github.com/owner/repo/issues/1)'));
+});
+test('ordinary issue titles keep Unicode and punctuation readable in Live Preview', () =>
+{
+  assert.equal(safeTitle('[Test] Grüße: open, close — 👍'), '\\[Test\\] Grüße: open, close — 👍');
+  assert.equal(safeTitle('[due:: 2099-01-01] 📅 2099-01-01'), '\\[due&#58;&#58; 2099-01-01\\] &#128197; 2099-01-01');
 });
 test('managed update preserves YAML, surrounding bytes and CRLF; repeated update is identical', () => {
   const yaml = '---\r\nid: keep\r\ncontexts: ["[[A]]"]\r\n---\r\n';

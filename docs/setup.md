@@ -1,6 +1,6 @@
 # Test preview setup
 
-Issue Bridge 0.1.1 is a development preview. Desktop/mobile runtime behavior and a real GitHub App login still require live validation. The test deployment target is `C:/Users/mj/Obsidian/Test`, selected in ignored `.env.local`.
+Issue Bridge 0.1.2 is the first public release. Real device login and core desktop behavior were validated on Windows / Obsidian 1.15.1; see validation-2026-11-14.md. Mobile, expired-token renewal and private README access still need live validation. The local test deployment target is `C:/Users/mj/Obsidian/Test`, selected in ignored `.env.local`.
 
 ## GitHub App
 

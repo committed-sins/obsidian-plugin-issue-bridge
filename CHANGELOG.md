@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2 — 2026-11-14
+
+First public release, following desktop acceptance in the separate Test vault.
+
+- Fixed issue-title escaping so ordinary punctuation and Unicode stay readable in Live Preview while Tasks metadata stays neutralized.
+- Refresh settings after acknowledging newly assigned issues.
+- Verified real GitHub device login, import, close/reopen, unassign, Tasks queries, periodic/startup sync and connection persistence across plugin reload; repository README rendering and unavailable-file feedback also checked live.
+- Added pinned CI/release workflows and release artifact checksums. Type/build checks and all 36 tests pass.
+- Mobile, live expired-token renewal and private README access remain unverified. The default app is still limited to Committed Sins installations.
+
 ## 0.1.1 — 2026-11-12
 
 - Added collapsible read-only `issue-bridge` Markdown blocks for README.md and other relative Markdown paths in the note's `github_repo` repository.

@@ -12,10 +12,16 @@ export function normalizeRepo(value: unknown): string {
   if (!name || name === '.' || name === '..') throw new Error('Invalid repository name.');
   return `${match[1]}/${name}`.toLowerCase();
 }
-// Entity-encode punctuation and Unicode metadata symbols to prevent title content
-// from becoming Tasks dates, priorities, HTML, links, extra tasks or marker lines.
-export function safeTitle(title: string): string {
-  return [...title.replace(/\s+/gu, ' ').trim()].map(c => /[a-z\d ]/i.test(c) ? c : `&#${c.codePointAt(0)};`).join('');
+// Ordinary Markdown escaping remains readable in Live Preview. Only symbols
+// interpreted as Tasks metadata (and Dataview field separators) need entities.
+export function safeTitle(title: string): string
+{
+  const metadata = new Set([...'📅⏳🛫➕✅❌🔁🔺⏫🔼🔽⏬🆔⛔🏁']);
+  return [...title.replace(/[\s\u200b\u202a-\u202e\u2066-\u2069]+/gu, ' ').trim()].map(c =>
+  {
+    if (metadata.has(c)) return `&#${c.codePointAt(0)};`;
+    return /[\\`*_{}\[\]()<>#!|&]/.test(c) ? `\\${c}` : c;
+  }).join('').replace(/::/g, '&#58;&#58;');
 }
 export function renderTasks(repo: string, issues: Issue[], eol = '\n'): string {
   return [...issues].sort((a, b) => a.number - b.number).map(issue => `- [${issue.state === 'closed' ? 'x' : ' '}] [#${issue.number} ${safeTitle(issue.title)}](https://github.com/${repo}/issues/${issue.number})`).join(eol);

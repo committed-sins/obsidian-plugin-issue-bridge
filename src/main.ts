@@ -134,7 +134,8 @@ export default class IssueBridge extends Plugin {
     this.statusEl?.setText(this.busy ? 'Issue Bridge: syncing…' : `Issue Bridge${this.local.unread.length ? `: ${this.local.unread.length} new` : ''}`);
     this.statusEl?.setAttribute('title', this.statusText());
   }
-  showNewIssues() {
+  showNewIssues(onSeen?: () => void)
+  {
     const modal = new Modal(this.app);
     modal.titleEl.setText('Issue Bridge — new assigned issues');
     modal.contentEl.createEl('p', { text: this.statusText() });
@@ -147,7 +148,10 @@ export default class IssueBridge extends Plugin {
     }
     if (!this.local.unread.length) modal.contentEl.createEl('p', { text: 'No new issues since the initial import or your last acknowledgment.' });
     const button = modal.contentEl.createEl('button', { text: 'Mark all as seen' });
-    button.onclick = () => { this.local.unread = []; this.persistLocal(); this.updateStatus(); modal.close(); };
+    button.onclick = () =>
+    {
+      this.local.unread = []; this.persistLocal(); this.updateStatus(); modal.close(); onSeen?.();
+    };
     modal.open();
   }
   private mapping(content: string): { repo: string; bodyOffset: number } | null {
