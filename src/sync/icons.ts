@@ -6,10 +6,9 @@ class GitHubIcon extends WidgetType
   {
     return true;
   }
-  toDOM(): HTMLElement
+  toDOM(view: EditorView): HTMLElement
   {
-    const icon = document.createElement('span');
-    icon.className = 'issue-bridge-github-icon';
+    const icon = view.dom.ownerDocument.adoptNode(createSpan({ cls: 'issue-bridge-github-icon' }));
     icon.setAttribute('aria-label', 'GitHub');
     icon.setAttribute('role', 'img');
     return icon;

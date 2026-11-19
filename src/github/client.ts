@@ -1,4 +1,5 @@
 import type { Http } from './auth';
+import { isIssueNumber, isRecord } from '../validation';
 export interface Issue { number: number; title: string; state: 'open' | 'closed'; createdAt: string }
 export interface RepositoryMarkdown { markdown: string; url: string }
 export class ApiError extends Error {
@@ -46,12 +47,13 @@ export class GitHubClient {
     for (let page = 1; page <= 1000; page++) {
       const json = await this.get(`/repos/${repo}/issues?state=all&assignee=${encodeURIComponent(login)}&sort=created&direction=asc&per_page=100&page=${page}`);
       if (!Array.isArray(json) || json.length > 100) throw new Error('GitHub returned an invalid issue page. Previous tasks were retained.');
-      for (const item of json) {
-        if (!item || typeof item !== 'object') throw new Error('GitHub returned an invalid issue.');
+      const items: unknown[] = json;
+      for (const item of items) {
+        if (!isRecord(item)) throw new Error('GitHub returned an invalid issue.');
         if ('pull_request' in item) continue;
-        if (!Number.isSafeInteger(item.number) || item.number <= 0 || typeof item.title !== 'string' || !['open', 'closed'].includes(item.state)
+        if (!isIssueNumber(item.number) || typeof item.title !== 'string' || (item.state !== 'open' && item.state !== 'closed')
           || typeof item.created_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(item.created_at) || !Number.isFinite(Date.parse(item.created_at))
-          || !Array.isArray(item.assignees) || !item.assignees.some((a: { login?: string }) => typeof a?.login === 'string' && a.login.toLowerCase() === login.toLowerCase())) throw new Error('GitHub returned inconsistent issue data. Previous tasks were retained.');
+          || !Array.isArray(item.assignees) || !item.assignees.some((a: unknown) => isRecord(a) && typeof a.login === 'string' && a.login.toLowerCase() === login.toLowerCase())) throw new Error('GitHub returned inconsistent issue data. Previous tasks were retained.');
         if (issues.has(item.number)) throw new Error('Issue pages changed during sync. Retry to get a complete snapshot.');
         issues.set(item.number, { number: item.number, title: item.title, state: item.state, createdAt: item.created_at });
       }

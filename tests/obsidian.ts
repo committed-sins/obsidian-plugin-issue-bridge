@@ -4,8 +4,66 @@ export class MarkdownView { constructor(public file: TFile, private text: string
 export class Notice { static messages: string[] = []; constructor(message: string) { Notice.messages.push(message); } }
 export class Plugin { constructor(public app: any, public manifest: any) {} }
 export class Modal { constructor(public app: any) {} }
-export class PluginSettingTab { constructor(public app: any, public plugin: any) {} }
-export class Setting {}
+export const settingsHost = { modern: true };
+export function requireApiVersion(_version: string)
+{
+  return settingsHost.modern;
+}
+export class PluginSettingTab
+{
+  containerEl = { rows: [] as Setting[], empty: () =>
+  { this.containerEl.rows = []; } };
+  updates = 0;
+  constructor(public app: any, public plugin: any)
+  {}
+  update()
+  {
+    this.updates++;
+  }
+}
+export class SettingControl
+{
+  text = ''; value: unknown; disabled = false;
+  change?: (value: any) => unknown;
+  click?: () => unknown;
+  setValue(value: unknown)
+  { this.value = value; return this; }
+  setPlaceholder(_value: string)
+  { return this; }
+  setDisabled(value: boolean)
+  { this.disabled = value; return this; }
+  setButtonText(value: string)
+  { this.text = value; return this; }
+  setCta()
+  { return this; }
+  onChange(callback: (value: any) => unknown)
+  { this.change = callback; return this; }
+  onClick(callback: () => unknown)
+  { this.click = callback; return this; }
+}
+export class Setting
+{
+  name = ''; desc: unknown; heading = false;
+  controls: SettingControl[] = [];
+  constructor(container: { rows: Setting[] })
+  { container.rows.push(this); }
+  setName(value: string)
+  { this.name = value; return this; }
+  setDesc(value: unknown)
+  { this.desc = value; return this; }
+  setHeading()
+  { this.heading = true; return this; }
+  addText(callback: (control: SettingControl) => unknown)
+  { return this.addControl(callback); }
+  addToggle(callback: (control: SettingControl) => unknown)
+  { return this.addControl(callback); }
+  addButton(callback: (control: SettingControl) => unknown)
+  { return this.addControl(callback); }
+  private addControl(callback: (control: SettingControl) => unknown)
+  {
+    const control = new SettingControl(); this.controls.push(control); callback(control); return this;
+  }
+}
 export class App {}
 export class MarkdownRenderChild {
   constructor(public containerEl: HTMLElement) {}

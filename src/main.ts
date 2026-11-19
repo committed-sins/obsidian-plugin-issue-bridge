@@ -9,8 +9,8 @@ import { registerRepositoryPreview } from './preview/block';
 import { PreviewCache } from './preview/cache';
 import { previewPath } from './preview/markdown';
 import { sourceIcons } from './sync/icons';
-interface Unread { repo: string; number: number; path: string }
-interface LocalState { secretId: string; snapshots: Record<string, number[]>; unread: Unread[]; lastSync: number; summary: string }
+import { readLocalState, type LocalState } from './localState';
+import { isRecord } from './validation';
 const LOCAL_KEY = 'issue-bridge-v1';
 export default class IssueBridge extends Plugin {
   settings: Settings = { ...DEFAULTS };
@@ -26,17 +26,20 @@ export default class IssueBridge extends Plugin {
   private retryAt = 0;
   private vaultRevision = 0;
   private previews = new PreviewCache();
-  private http: Http = async request => {
-    try { return await requestUrl({ ...request, throw: false }); }
+  private http: Http = async request =>
+  {
+    try {
+      const response = await requestUrl({ ...request, throw: false });
+      const json: unknown = response.json;
+      return { status: response.status, json, headers: response.headers };
+    }
     catch { throw new Error('GitHub could not be reached. Check your connection.'); }
   };
-  async onload() {
+  async onload()
+  {
     this.alive = true;
     this.settings = cleanSettings(await this.loadData());
-    const stored = this.app.loadLocalStorage(LOCAL_KEY);
-    this.local = stored && typeof stored.secretId === 'string' && /^issue-bridge-[a-f\d-]+$/.test(stored.secretId)
-      ? { ...stored, snapshots: stored.snapshots ?? {}, unread: Array.isArray(stored.unread) ? stored.unread : [] }
-      : { secretId: `issue-bridge-${crypto.randomUUID()}`, snapshots: {}, unread: [], lastSync: 0, summary: 'Not synchronized yet.' };
+    this.local = readLocalState(this.app.loadLocalStorage(LOCAL_KEY));
     this.persistLocal();
     if (!this.app.secretStorage) { new Notice('Issue Bridge requires Obsidian SecretStorage. Update Obsidian before signing in.'); return; }
     this.session = new Session(this.http, this.app.secretStorage, this.local.secretId, () => this.alive);
@@ -60,8 +63,10 @@ export default class IssueBridge extends Plugin {
       if (!this.alive) return;
       if (this.settings.startupSync && this.hasCredential()) void this.sync(false);
     });
-    this.registerDomEvent(document, 'visibilitychange', () => {
-      if (document.visibilityState === 'visible' && this.settings.startupSync && this.hasCredential() && Date.now() - this.local.lastSync > 60_000) void this.sync(false);
+    const doc = activeDocument;
+    this.registerDomEvent(doc, 'visibilitychange', () =>
+    {
+      if (doc.visibilityState === 'visible' && this.settings.startupSync && this.hasCredential() && Date.now() - this.local.lastSync > 60_000) void this.sync(false);
     });
     this.schedule();
   }
@@ -161,9 +166,9 @@ export default class IssueBridge extends Plugin {
   {
     const info = getFrontMatterInfo(content);
     if (!info.exists) return null;
-    const fm = parseYaml(info.frontmatter);
+    const fm: unknown = parseYaml(info.frontmatter);
     const property = this.settings.repositoryProperty;
-    if (!fm || typeof fm !== 'object' || !Object.prototype.hasOwnProperty.call(fm, property)) return null;
+    if (!isRecord(fm) || !Object.prototype.hasOwnProperty.call(fm, property)) return null;
     const repo = repositoryFromProperty(fm[property]);
     return repo ? { repo, bodyOffset: info.contentStart } : null;
   }
@@ -175,7 +180,8 @@ export default class IssueBridge extends Plugin {
     const path = `${this.app.vault.configDir}/plugins/obsidian-tasks-plugin/data.json`;
     if (!adapter || !await adapter.exists(path)) return result;
     // Read saved public configuration only; no dependency on Tasks internals.
-    const config = JSON.parse(await adapter.read(path));
+    const config: unknown = JSON.parse(await adapter.read(path));
+    if (!isRecord(config)) throw new Error('Invalid Tasks configuration; previous tasks retained.');
     if (config.taskFormat === 'dataview') result.format = 'dataview';
     else if (config.taskFormat && config.taskFormat !== 'tasksPluginEmoji') throw new Error('Unsupported Tasks format; previous tasks retained.');
     if (typeof config.globalFilter === 'string' && config.globalFilter.trim()) {

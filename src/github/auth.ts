@@ -33,11 +33,19 @@ export async function requestDeviceCode(http: Http, clientId: string): Promise<D
 export async function refreshAccessToken(http: Http, clientId: string, refreshToken: string): Promise<TokenResponse> {
   return validateToken(await oauth(http, 'oauth/access_token', { client_id: clientId, refresh_token: refreshToken, grant_type: 'refresh_token' }));
 }
-export function pause(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
+export function pause(ms: number, signal: AbortSignal): Promise<void>
+{
+  return new Promise((resolve, reject) =>
+  {
     if (signal.aborted) { reject(new Error('Sign-in cancelled.')); return; }
-    const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(new Error('Sign-in cancelled.')); };
-    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, ms);
+    const abort = () =>
+    {
+      window.clearTimeout(timer); signal.removeEventListener('abort', abort); reject(new Error('Sign-in cancelled.'));
+    };
+    const timer = window.setTimeout(() =>
+    {
+      signal.removeEventListener('abort', abort); resolve();
+    }, ms);
     signal.addEventListener('abort', abort, { once: true });
   });
 }

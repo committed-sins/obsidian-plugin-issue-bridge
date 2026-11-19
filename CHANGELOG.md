@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4 — 2026-11-19
+
+- Address the Obsidian Plugin Review: use native settings headings, searchable declarative settings on 1.13+, and a shared legacy renderer for the existing 1.11.4 minimum.
+- Remove regex lookbehind, unnecessary escapes and control-character regexes. Retain exact note boundaries and path validation.
+- Use window timers and Obsidian icon helpers; create editor icons in the editor's owning document.
+- Validate unknown GitHub, YAML, JSON and stored-state values before accessing them; retain valid credential references and synchronization state.
+- Add the official Obsidian ESLint configuration to local and CI checks, rejecting warnings. Typecheck, lint, build and 46 tests pass. No new live desktop or iOS verification.
+
 ## 0.1.3 — 2026-11-14
 
 - Configurable repository property accepting a scalar URL or mixed URL list; select the first valid GitHub repository for issue sync and README previews.

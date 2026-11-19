@@ -5,15 +5,82 @@ import { GitHubClient, ApiError, type Issue } from '../src/github/client';
 import { pollForToken, requestDeviceCode, refreshAccessToken, pause, type Http } from '../src/github/auth';
 import { Session } from '../src/github/session';
 import IssueBridge from '../src/main';
-import { cleanSettings } from '../src/settings';
+import { cleanSettings, IssueBridgeSettings } from '../src/settings';
+import { readLocalState } from '../src/localState';
+import type { Setting as ObsidianSetting, SettingGroup } from 'obsidian';
 import { ISSUE_BRIDGE_APP } from '../src/github/app';
-import { TFile, MarkdownView, Notice } from './obsidian';
+import { TFile, MarkdownView, Notice, Setting, settingsHost } from './obsidian';
 import { previewPath, previewHtml } from '../src/preview/markdown';
 import { PreviewCache } from '../src/preview/cache';
 import { RepositoryPreview } from '../src/preview/block';
 const fixture: Issue[] = [{ number: 2, title: 'Keep context', state: 'open', createdAt: '2026-11-01T10:00:00Z' }, { number: 1, title: 'Done', state: 'closed', createdAt: '2026-10-01T10:00:00Z' }];
 const issue = (number: number, state = 'open') => ({ number, title: `Issue ${number}`, state, created_at: '2026-11-01T10:00:00Z', assignees: [{ login: 'tester' }] });
 const ok = (json: unknown) => ({ status: 200, json });
+
+test('stored state validates unknown data while retaining the credential reference and valid entries', () =>
+{
+  for (const input of [null, [], 42, 'bad', { secretId: 42 }]) {
+    assert.match(readLocalState(input).secretId, /^issue-bridge-[a-f\d-]+$/);
+    assert.equal(cleanSettings(input).repositoryProperty, 'github_repo');
+  }
+  const state = readLocalState({
+    secretId: 'issue-bridge-deadbeef',
+    snapshots: { valid: [1, 2], bad: ['1'], invalid: [-1], other: null },
+    unread: [null, 'bad', { repo: 'o/r', number: 1, path: 'note.md' }, { repo: 'https://evil.test', number: 2, path: 'note.md' }],
+    lastSync: Infinity, summary: false
+  });
+  assert.equal(state.secretId, 'issue-bridge-deadbeef');
+  assert.deepEqual(state.snapshots, { valid: [1, 2] });
+  assert.deepEqual(state.unread, [{ repo: 'o/r', number: 1, path: 'note.md' }]);
+  assert.equal(state.lastSync, 0); assert.equal(typeof state.summary, 'string');
+  const proto = readLocalState(JSON.parse('{"secretId":"issue-bridge-deadbeef","snapshots":{"__proto__":[1]}}'));
+  assert.equal(Object.getPrototypeOf(proto.snapshots), Object.prototype);
+  assert.deepEqual(Object.getOwnPropertyDescriptor(proto.snapshots, '__proto__')?.value, [1]);
+});
+
+test('marker scanning preserves exact boundaries with LF, CRLF and unterminated final lines', () =>
+{
+  for (const eol of ['\n', '\r\n']) {
+    for (const ending of ['', eol]) {
+      const source = ['Before', START, 'old', END, 'After'].join(eol) + ending;
+      const next = updateBlock(source, 0, 'o/r', fixture);
+      assert.ok(next.startsWith(`Before${eol}${START}${eol}`));
+      assert.ok(next.endsWith(`${END}${eol}After${ending}`));
+      assert.equal(updateBlock(next, 0, 'o/r', fixture), next);
+    }
+  }
+});
+
+test('preview paths reject every ASCII control character without a control-character regexp', () =>
+{
+  for (let code = 0; code < 32; code++) {
+    assert.throws(() => previewPath(`docs/a${String.fromCharCode(code)}b.md`));
+  }
+});
+
+test('authorization waits use window timers and clear the timer on cancellation', async () =>
+{
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  let cleared = 0;
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+    setTimeout,
+    clearTimeout: (timer: ReturnType<typeof setTimeout>) =>
+    {
+      cleared++; clearTimeout(timer);
+    }
+  } });
+  try {
+    await pause(0, new AbortController().signal);
+    const abort = new AbortController();
+    const pending = pause(60_000, abort.signal);
+    abort.abort();
+    await assert.rejects(pending, /cancelled/);
+    assert.equal(cleared, 1);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'window', original);
+    else Reflect.deleteProperty(globalThis, 'window');
+  }
+});
 
 test('repository properties accept scalars and select the first valid repository from mixed URL lists', () =>
 {
@@ -223,6 +290,47 @@ function runtime() {
     setIssues: (issues: ReturnType<typeof issue>[]) => { activeIssues = issues; }, setFail: () => { fail = true; },
     beforeFetch: (fn: () => void) => { beforeFetch = fn; } };
 }
+
+test('declarative settings are searchable and share controls with the legacy renderer', async () =>
+{
+  const r = runtime(); let saves = 0;
+  r.plugin.saveSettings = async () =>
+  {
+    saves++;
+  };
+  const tab = new IssueBridgeSettings(r.app, r.plugin);
+  const host = tab as unknown as { containerEl: { rows: Setting[] }; updates: number };
+  const definitions = tab.getSettingDefinitions();
+  assert.ok(definitions.some(d => d.name === 'Repository property'));
+  assert.ok(definitions.some(d => d.name === 'Respect Obsidian Tasks'));
+  assert.ok(definitions.some(d => d.name === 'Check interval (minutes)'));
+  assert.equal(r.writes(), 0); assert.equal(saves, 0);
+  // Match the host's render callback path, without a live settings window.
+  for (const definition of definitions) {
+    const row = new Setting(host.containerEl).setName(definition.name);
+    definition.render(row as unknown as ObsidianSetting, {} as SettingGroup);
+  }
+  assert.equal(host.containerEl.rows[0].heading, true);
+  await host.containerEl.rows.find(row => row.name === 'Repository property')!.controls[0].change!(' urls ');
+  assert.equal(r.plugin.settings.repositoryProperty, 'urls'); assert.equal(saves, 1);
+  await host.containerEl.rows.find(row => row.name === 'Check interval (minutes)')!.controls[0].change!('0');
+  assert.equal(saves, 1);
+  await host.containerEl.rows.find(row => row.name === 'Check interval (minutes)')!.controls[0].change!('7');
+  assert.equal(r.plugin.settings.intervalMinutes, 7); assert.equal(saves, 2);
+  const disconnect = host.containerEl.rows.find(row => row.name === 'Connection')!.controls[1];
+  settingsHost.modern = true;
+  disconnect.click!();
+  assert.equal(host.updates, 1);
+  try {
+    settingsHost.modern = false;
+    tab.display();
+    assert.equal(host.containerEl.rows.length, definitions.length);
+    assert.equal(host.containerEl.rows[0].heading, true);
+    assert.ok(String(host.containerEl.rows.at(-1)!.desc).includes('urls:'));
+    host.containerEl.rows.find(row => row.name === 'Connection')!.controls[1].click!();
+    assert.equal(host.updates, 1);
+  } finally { settingsHost.modern = true; }
+});
 
 test('runtime uses the custom list property for sync and README, reads Tasks configuration and preserves planning', async () =>
 {

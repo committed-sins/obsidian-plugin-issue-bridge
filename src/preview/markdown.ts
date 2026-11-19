@@ -1,9 +1,11 @@
 import MarkdownIt from 'markdown-it';
-export function previewPath(source: string): string {
+export function previewPath(source: string): string
+{
   const lines = source.trim().split(/\r?\n/);
   const path = lines[0]?.trim();
   if (lines.length !== 1 || !path || path.length > 512 || !/\.md$/i.test(path)
-    || path.startsWith('/') || /[\\:#?\x00-\x1f]/.test(path) || path.split('/').some(part => !part || part === '.' || part === '..')) {
+    || path.startsWith('/') || /[\\:#?]/.test(path) || [...path].some(c => c.charCodeAt(0) < 32)
+    || path.split('/').some(part => !part || part === '.' || part === '..')) {
     throw new Error('Use one relative Markdown file path, for example README.md or docs/overview.md.');
   }
   return path;

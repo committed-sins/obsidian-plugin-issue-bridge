@@ -29,8 +29,8 @@ const PLAIN_TASKS: TaskOptions = { respectTasks: false, format: 'emoji' };
 function taskMetadata(issue: Issue, previous: string, options: TaskOptions): string
 {
   if (!options.respectTasks) return previous;
-  const idPattern = /(?:🆔\s*([a-z\d-]+)|[\[(]\s*id::\s*([a-z\d-]+)\s*[\])])/i;
-  const datePattern = /(?:➕\s*(\d{4}-\d{2}-\d{2})|[\[(]\s*created::\s*(\d{4}-\d{2}-\d{2})\s*[\])])/;
+  const idPattern = /(?:🆔\s*([a-z\d-]+)|[[(]\s*id::\s*([a-z\d-]+)\s*[\])])/i;
+  const datePattern = /(?:➕\s*(\d{4}-\d{2}-\d{2})|[[(]\s*created::\s*(\d{4}-\d{2}-\d{2})\s*[\])])/;
   const previousId = idPattern.exec(previous), previousDate = datePattern.exec(previous);
   const id = previousId?.[1] ?? previousId?.[2] ?? crypto.randomUUID().replace(/-/g, '');
   const date = previousDate?.[1] ?? previousDate?.[2] ?? issue.createdAt.slice(0, 10);
@@ -49,7 +49,7 @@ export function safeTitle(title: string): string
   return [...title.replace(/[\s\u200b\u202a-\u202e\u2066-\u2069]+/gu, ' ').trim()].map(c =>
   {
     if (metadata.has(c)) return `&#${c.codePointAt(0)};`;
-    return /[\\`*_{}\[\]()<>#!|&]/.test(c) ? `\\${c}` : c;
+    return '\\`*_{}[]()<>#!|&'.includes(c) ? `\\${c}` : c;
   }).join('').replace(/::/g, '&#58;&#58;');
 }
 export function renderTasks(repo: string, issues: Issue[], eol = '\n', options = PLAIN_TASKS, previous = ''): string
@@ -75,7 +75,7 @@ export function updateBlock(content: string, bodyOffset: number, repo: string, i
   const eol = content.includes('\r\n') ? '\r\n' : '\n';
   const matches: { kind: 'start' | 'end'; start: number; end: number }[] = [];
   let offset = 0, fence = '', fenceLength = 0;
-  for (const line of body.split(/(?<=\n)/)) {
+  for (const line of body.match(/[^\n]*\n|[^\n]+$/g) ?? []) {
     const text = line.replace(/\r?\n$/, '');
     const boundary = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(text);
     if (boundary) {
