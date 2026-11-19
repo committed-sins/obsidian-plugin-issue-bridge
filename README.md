@@ -18,7 +18,13 @@ A single URL works too. The first valid GitHub repository URL wins. Use one note
 
 ## Tasks
 
-Imported tasks display a small GitHub icon. **Respect Obsidian Tasks** is enabled by default: it adds a stable task ID and the issue's creation date (UTC), using the saved Tasks emoji or Dataview format and global filter. Without Tasks, it uses emoji. Plan tasks with Tasks as usual: local scheduling, priorities, dependencies, tags and IDs survive synchronization. Disabling the option stops adding metadata and retains existing metadata.
+Imported tasks display an Octocat, a plain title, a linked issue number, then Tasks metadata. **Respect Obsidian Tasks** is enabled by default: it adds a stable six-character ID and the issue's creation date (UTC), using the saved Tasks emoji or Dataview format and global filter. New IDs are checked against existing IDs in non-excluded notes; older IDs remain unchanged. Without Tasks, it uses emoji. Local scheduling, priorities, dependencies and tags survive synchronization. Disabling the option stops adding metadata and retains existing metadata.
+
+```markdown
+- [ ] Fix login [#42](https://github.com/owner/repository/issues/42) 🆔 a7k2m9 ➕ 2026-11-19
+```
+
+The Octocat is displayed before the title without adding icon markup to the note.
 
 GitHub controls issue titles and open/closed status. Unassigned issues disappear after a successful complete fetch. Notes outside the managed section remain unchanged. Recurring tasks and automatic deletion are unsuitable for imported issues because GitHub controls their lifecycle.
 

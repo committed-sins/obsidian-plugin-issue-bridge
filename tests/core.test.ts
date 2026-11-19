@@ -1,13 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { START, END, duplicateRepos, normalizeRepo, repositoryFromProperty, renderTasks, updateBlock, newIssueNumbers, safeTitle } from '../src/sync/core';
+import { START, END, createTaskId, duplicateRepos, normalizeRepo, repositoryFromProperty, renderTasks, taskIds, updateBlock, newIssueNumbers, safeTitle } from '../src/sync/core';
+import { decorateIssueLinks, registerTaskIcons, taskIconOffset, TaskIcons } from '../src/sync/icons';
+import { parseHTML } from 'linkedom';
 import { GitHubClient, ApiError, type Issue } from '../src/github/client';
 import { pollForToken, requestDeviceCode, refreshAccessToken, pause, type Http } from '../src/github/auth';
 import { Session } from '../src/github/session';
 import IssueBridge from '../src/main';
 import { cleanSettings, IssueBridgeSettings } from '../src/settings';
 import { readLocalState } from '../src/localState';
-import type { Setting as ObsidianSetting, SettingGroup } from 'obsidian';
+import type { MarkdownPostProcessor, Plugin, Setting as ObsidianSetting, SettingGroup } from 'obsidian';
 import { ISSUE_BRIDGE_APP } from '../src/github/app';
 import { TFile, MarkdownView, Notice, Setting, settingsHost } from './obsidian';
 import { previewPath, previewHtml } from '../src/preview/markdown';
@@ -16,6 +18,122 @@ import { RepositoryPreview } from '../src/preview/block';
 const fixture: Issue[] = [{ number: 2, title: 'Keep context', state: 'open', createdAt: '2026-11-01T10:00:00Z' }, { number: 1, title: 'Done', state: 'closed', createdAt: '2026-10-01T10:00:00Z' }];
 const issue = (number: number, state = 'open') => ({ number, title: `Issue ${number}`, state, created_at: '2026-11-01T10:00:00Z', assignees: [{ login: 'tester' }] });
 const ok = (json: unknown) => ({ status: 200, json });
+
+test('new Tasks IDs have six base-36 characters and retry collisions or short candidates', () =>
+{
+  const used = new Set(['4fzzzx']);
+  const values = [0, 0.123456789, 0.234567891];
+  let calls = 0;
+  const generated = createTaskId(used, () => values[calls++]);
+  assert.match(generated, /^[a-z\d]{6}$/);
+  assert.notEqual(generated, '4fzzzx'); assert.equal(calls, 3); assert.ok(used.has(generated));
+  assert.throws(() => createTaskId(used, () => 0.123456789), /Could not generate/);
+  assert.deepEqual(taskIds('🆔 abc_def (id:: XyZ-12) [id:: a1b2c3] 🆔\uFE0F abc789'), ['abc_def', 'XyZ-12', 'a1b2c3', 'abc789']);
+});
+
+test('legacy imported lines migrate to plain titles with number-only links, retaining metadata and long IDs', () =>
+{
+  const oldId = '0123456789abcdef0123456789abcdef';
+  const old = `${START}\n- [ ] [#2 Keep context](https://github.com/o/r/issues/2) 🆔 ${oldId} ➕ 2026-11-01 ⏳ 2026-12-01 ⛔ other_id\n${END}`;
+  const options = { respectTasks: true, format: 'emoji' as const };
+  const next = updateBlock(old, 0, 'o/r', [fixture[0]], options);
+  assert.ok(next.includes('- [ ] Keep context [#2](https://github.com/o/r/issues/2)'));
+  assert.ok(next.includes(`🆔 ${oldId}`)); assert.ok(next.includes('⏳ 2026-12-01 ⛔ other_id'));
+  assert.equal(updateBlock(next, 0, 'o/r', [fixture[0]], options), next);
+  assert.equal(taskIconOffset('- [ ] Keep context [#2](https://github.com/o/r/issues/2) 🆔 abc123'), 6);
+  assert.equal(taskIconOffset('- [ ] [#2 Keep context](https://github.com/o/r/issues/2)'), 6);
+  assert.equal(taskIconOffset('A normal paragraph [#2](https://github.com/o/r/issues/2)'), null);
+});
+
+test('number-only links follow escaped plain titles and precede all Tasks metadata', () =>
+{
+  const result = renderTasks('o/r', [{ ...fixture[0], title: 'Title [brackets] **bold** 📅 2099-01-01' }], '\n', { respectTasks: true, format: 'emoji' });
+  assert.match(result, /^- \[ \] Title \\\[brackets\\\] \\\*\\\*bold\\\*\\\* &#128197; 2099-01-01 \[#2\]\(https:\/\/github\.com\/o\/r\/issues\/2\) 🆔 [a-z\d]{6} ➕ 2026-11-01$/);
+});
+
+async function withTaskDom(html: string, run: (root: HTMLElement) => void | Promise<void>): Promise<void>
+{
+  const dom = parseHTML(`<html><body>${html}</body></html>`);
+  const originalSpan = Object.getOwnPropertyDescriptor(globalThis, 'createSpan');
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  // Linkedom has no adoptNode; our helper already creates nodes in this document.
+  Object.defineProperty(dom.document, 'adoptNode', { value: (node: Node) => node });
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: dom.window });
+  Object.defineProperty(globalThis, 'createSpan', { configurable: true, value: (options: { cls: string; attr: Record<string, string> }) =>
+  {
+    const span = dom.document.createElement('span'); span.className = options.cls;
+    for (const [key, value] of Object.entries(options.attr)) span.setAttribute(key, value);
+    return span;
+  } });
+  try { await run(dom.document.body as unknown as HTMLElement); }
+  finally {
+    if (originalSpan) Object.defineProperty(globalThis, 'createSpan', originalSpan);
+    else Reflect.deleteProperty(globalThis, 'createSpan');
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+    else Reflect.deleteProperty(globalThis, 'window');
+  }
+}
+
+test('Octocat starts native and Tasks descriptions, stays outside links and is not duplicated', async () =>
+{
+  await withTaskDom(`<ul>
+    <li class="task-list-item" id="native"><input type="checkbox">Plain title <a href="https://github.com/o/r/issues/2">#2</a> 🆔 abc123</li>
+    <li class="task-list-item" id="query"><input type="checkbox"><span class="tasks-list-text"><span class="task-description">Query title <a href="https://github.com/o/r/issues/3">#3</a></span></span></li>
+    <li class="task-list-item" id="other"><input type="checkbox">Other <a href="https://example.org/o/r/issues/4">#4</a></li>
+    </ul><p><a href="https://github.com/o/r/issues/2">#2</a></p>`, root =>
+  {
+    decorateIssueLinks(root); decorateIssueLinks(root);
+    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 2);
+    const native = root.querySelector('#native')!;
+    assert.equal((native.childNodes[1] as HTMLElement).className, 'issue-bridge-github-icon');
+    assert.ok(native.childNodes[2].textContent?.startsWith('Plain title'));
+    const query = root.querySelector('#query .task-description')!;
+    assert.equal((query.firstChild as HTMLElement).className, 'issue-bridge-github-icon');
+    assert.ok(query.childNodes[1].textContent?.startsWith('Query title'));
+    assert.equal(root.querySelectorAll('a .issue-bridge-github-icon').length, 0);
+    assert.equal(root.querySelector('#other .issue-bridge-github-icon'), null);
+  });
+});
+
+test('Octocat decorates asynchronously rendered Tasks and disconnects its observer on unload', async () =>
+{
+  await withTaskDom('<div id="results"></div>', async root =>
+  {
+    const component = new TaskIcons(root); component.onload();
+    root.querySelector('#results')!.innerHTML = '<li class="task-list-item">Late title <a href="https://github.com/o/r/issues/9">#9</a></li>';
+    await settle();
+    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 1);
+    component.onunload();
+    root.querySelector('#results')!.innerHTML = '<li class="task-list-item">After unload <a href="https://github.com/o/r/issues/10">#10</a></li>';
+    await settle();
+    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 0);
+  });
+});
+
+test('plugin cleanup disconnects render observers even while their note remains open', async () =>
+{
+  await withTaskDom('<div id="results"></div>', async root =>
+  {
+    let cleanup: (() => void) | undefined;
+    let processor: MarkdownPostProcessor | undefined;
+    const plugin = {
+      register: (callback: () => void) =>
+      {
+        cleanup = callback;
+      },
+      registerMarkdownPostProcessor: (callback: MarkdownPostProcessor) =>
+      {
+        processor = callback;
+      }
+    };
+    registerTaskIcons(plugin as unknown as Plugin);
+    await processor!(root, { addChild: (child: TaskIcons) => child.onload() } as unknown as Parameters<MarkdownPostProcessor>[1]);
+    cleanup!();
+    root.querySelector('#results')!.innerHTML = '<li class="task-list-item">After disable <a href="https://github.com/o/r/issues/10">#10</a></li>';
+    await settle();
+    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 0);
+  });
+});
 
 test('stored state validates unknown data while retaining the credential reference and valid entries', () =>
 {
@@ -104,7 +222,7 @@ test('Tasks metadata keeps IDs and local planning across issue updates and forma
   assert.equal(updateBlock(first, 0, 'o/r', fixture, options), first);
   const planned = first.replace('➕ 2026-11-01', '➕ 2026-11-01 ⏳ 2026-12-01 📅 2026-12-02 ⏫ ⛔ dependency #local');
   const changed = updateBlock(planned, 0, 'o/r', [{ ...fixture[0], title: 'Renamed', state: 'closed' }], options);
-  assert.ok(changed.includes('- [x] [#2 Renamed]'));
+  assert.ok(changed.includes('- [x] Renamed [#2]'));
   assert.ok(changed.includes(`🆔 ${ids[1]}`));
   assert.ok(changed.includes('⏳ 2026-12-01 📅 2026-12-02 ⏫ ⛔ dependency #local'));
   assert.ok(changed.startsWith('Manual task\n'));
@@ -137,7 +255,7 @@ test('repository normalization rejects credentials, arbitrary hosts and subpaths
 test('task renderer handles state and escapes hostile Markdown and Tasks metadata', () => {
   const result = renderTasks('owner/repo', [{ number: 1, title: 'A](https://evil.test)\n- [ ] 📅 2030-01-01 <!-- issue-bridge:end --> <script>', state: 'closed', createdAt: '2026-11-01T10:00:00Z' }]);
   assert.equal(result.split('\n').length, 1);
-  assert.ok(result.startsWith('- [x] [#1 A\\]'));
+  assert.ok(result.startsWith('- [x] A\\]'));
   assert.ok(!result.includes('📅')); assert.ok(!result.includes('<script>')); assert.ok(!result.includes(END));
   assert.ok(result.endsWith('](https://github.com/owner/repo/issues/1)'));
 });
@@ -154,7 +272,7 @@ test('managed update preserves YAML, surrounding bytes and CRLF; repeated update
   assert.ok(result.endsWith(END + '\r\nAfter\r\n'));
   assert.equal(result.replaceAll('\r\n', '').includes('\n'), false);
   assert.equal(updateBlock(result, yaml.length, 'owner/repo', fixture), result);
-  assert.ok(result.indexOf('#1 Done') < result.indexOf('#2 Keep context'));
+  assert.ok(result.indexOf('Done [#1]') < result.indexOf('Keep context [#2]'));
 });
 test('first insertion appends; successful empty snapshot clears only owned contents', () => {
   const initial = 'Existing content\n';
@@ -330,6 +448,24 @@ test('declarative settings are searchable and share controls with the legacy ren
     host.containerEl.rows.find(row => row.name === 'Connection')!.controls[1].click!();
     assert.equal(host.updates, 1);
   } finally { settingsHost.modern = true; }
+});
+
+test('runtime reserves IDs from unmapped non-excluded notes before generating an imported ID', async () =>
+{
+  const r = runtime();
+  r.docs.set('notes/planning.md', '- [ ] Existing local task 🆔 4fzzzx');
+  const original = Math.random;
+  let calls = 0;
+  Math.random = () => ++calls === 1 ? 0.123456789 : 0.234567891;
+  try { await r.plugin.sync(false); }
+  finally { Math.random = original; }
+  assert.equal(r.writes(), 1); assert.equal(calls, 2);
+  const ids = taskIds(r.docs.get(r.file.path)!);
+  assert.equal(ids.length, 1); assert.match(ids[0], /^[a-z\d]{6}$/);
+  assert.notEqual(ids[0], '4fzzzx');
+  const before = r.docs.get(r.file.path);
+  await r.plugin.sync(false);
+  assert.equal(r.docs.get(r.file.path), before); assert.equal(r.writes(), 1);
 });
 
 test('runtime uses the custom list property for sync and README, reads Tasks configuration and preserves planning', async () =>

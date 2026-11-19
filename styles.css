@@ -8,8 +8,7 @@
 .issue-bridge-preview-body pre { overflow-x: auto; }
 
 /* GitHub Octicons mark-github (MIT), see THIRD_PARTY_NOTICES.md. */
-.issue-bridge-github-icon,
-.task-list-item a[href^="https://github.com/"][href*="/issues/"]::before {
+.issue-bridge-github-icon {
   content: "";
   display: inline-block;
   width: 0.9em;

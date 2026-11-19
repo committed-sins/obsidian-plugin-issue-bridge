@@ -4,11 +4,11 @@ import { GitHubClient, ApiError } from './github/client';
 import type { Http } from './github/auth';
 import { DeviceFlowModal } from './deviceFlowModal';
 import { cleanSettings, DEFAULTS, IssueBridgeSettings, type Settings } from './settings';
-import { duplicateRepos, newIssueNumbers, repositoryFromProperty, updateBlock, type Mapping, type TaskOptions } from './sync/core';
+import { duplicateRepos, newIssueNumbers, repositoryFromProperty, taskIds, updateBlock, type Mapping, type TaskOptions } from './sync/core';
 import { registerRepositoryPreview } from './preview/block';
 import { PreviewCache } from './preview/cache';
 import { previewPath } from './preview/markdown';
-import { sourceIcons } from './sync/icons';
+import { registerTaskIcons, sourceIcons } from './sync/icons';
 import { readLocalState, type LocalState } from './localState';
 import { isRecord } from './validation';
 const LOCAL_KEY = 'issue-bridge-v1';
@@ -45,6 +45,7 @@ export default class IssueBridge extends Plugin {
     this.session = new Session(this.http, this.app.secretStorage, this.local.secretId, () => this.alive);
     registerRepositoryPreview(this, (note, path, force) => this.repositoryPreview(note, path, force));
     this.registerEditorExtension(sourceIcons);
+    registerTaskIcons(this);
     this.addSettingTab(new IssueBridgeSettings(this.app, this));
     const changed = () => { this.vaultRevision++; };
     this.registerEvent(this.app.vault.on('modify', changed));
@@ -211,12 +212,14 @@ export default class IssueBridge extends Plugin {
     try {
       const configuration = JSON.stringify(this.settings);
       const taskOptions = await this.taskOptions();
+      taskOptions.usedIds = new Set<string>();
       if (JSON.stringify(this.settings) !== configuration) throw new Error('Settings changed during sync; retry.');
       const mappings: Mapping[] = [];
       for (const file of this.app.vault.getMarkdownFiles()) {
         if (!active()) return;
         if (this.excluded(file.path)) continue;
         const content = await this.app.vault.read(file);
+        for (const id of taskIds(content)) taskOptions.usedIds.add(id);
         try { const m = this.mapping(content); if (m) mappings.push({ path: file.path, content, ...m }); }
         catch { warnings.push(`${file.path}: invalid frontmatter or repository property; skipped.`); }
       }
@@ -244,6 +247,7 @@ export default class IssueBridge extends Plugin {
             for (const candidate of this.app.vault.getMarkdownFiles()) {
               if (this.excluded(candidate.path)) continue;
               const bytes = await this.app.vault.read(candidate);
+              for (const id of taskIds(bytes)) taskOptions.usedIds.add(id);
               try { if (this.mapping(bytes)?.repo === mapping.repo) owners++; }
               catch { /* Invalid mappings are reported by the main scan. */ }
             }

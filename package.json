@@ -1,6 +1,6 @@
 {
   "name": "obsidian-plugin-issue-bridge",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "Connect assigned GitHub issues to native tasks in existing Obsidian notes.",
@@ -25,6 +25,7 @@
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-plugin-obsidianmd": "0.6.0",
+    "linkedom": "0.18.15",
     "obsidian": "latest",
     "typescript": "^5.9.0",
     "typescript-eslint": "8.73.0"

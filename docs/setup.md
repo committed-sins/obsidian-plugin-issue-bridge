@@ -1,5 +1,13 @@
 # Test preview setup
 
+## Task descriptions and IDs in 0.1.5
+
+Imported lines use `- [ ] Plain title [#42](https://github.com/owner/repository/issues/42)` followed by local planning and generated Tasks metadata. Only the issue number is linked. The Octocat appears before the title through editor decorations and a render child that also handles asynchronously drawn Tasks results. No icon markup is stored in notes.
+
+New IDs use six base-36 characters, following Tasks' generator format. The existing sync scan reserves IDs from all non-excluded Markdown notes, including unmapped notes, and rechecks them before writes. New IDs are reserved across the sync batch. Collisions and undersized random candidates are retried with a bounded failure path. Excluded folders are not read for this check. Existing long, short, hyphenated or underscored IDs are retained; dependency references are not rewritten.
+
+The next successful sync migrates the previous fully linked title into the new description format while preserving the imported issue's ID and local metadata. No-op updates remain byte-identical after migration.
+
 ## Additions in 0.1.3
 
 **Repository property** selects the exact frontmatter key used by both sync and README blocks. Default: `github_repo`; set it to `urls` to reuse an existing property. A scalar URL and a YAML list are supported. Non-repository entries are ignored; the first valid GitHub repository URL wins. One active note per repository still applies. Changing the configured property does not remove old generated sections.

@@ -67,6 +67,14 @@ export class Setting
 export class App {}
 export class MarkdownRenderChild {
   constructor(public containerEl: HTMLElement) {}
+  unload(): void
+  {
+    this.onunload();
+  }
+  onunload(): void
+  {
+    // Synthetic Component lifecycle hook.
+  }
   registerDomEvent(el: HTMLElement, name: string, handler: EventListener) { el.addEventListener(name, handler); }
 }
 export function sanitizeHTMLToDom(html: string) { return { html }; }

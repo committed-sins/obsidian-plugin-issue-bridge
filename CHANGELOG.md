@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.5 — 2026-11-19
+
+- Generate six-character base-36 task IDs with collision checks against IDs in non-excluded notes and newly generated IDs in the sync batch. Keep all existing IDs and dependency references.
+- Render plain issue titles followed by a number-only link and Tasks metadata; migrate old imported lines while retaining local planning.
+- Place the Octocat before the title in editor, Reading view and asynchronously rendered Tasks results without storing icon markup in notes.
+- Add deterministic ID-collision, migration, title-format and DOM lifecycle tests. Typecheck, official lint, build and 53 tests pass; no new live UI verification.
+
 ## 0.1.4 — 2026-11-19
 
 - Address the Obsidian Plugin Review: use native settings headings, searchable declarative settings on 1.13+, and a shared legacy renderer for the existing 1.11.4 minimum.
