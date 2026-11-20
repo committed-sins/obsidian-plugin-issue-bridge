@@ -12,20 +12,29 @@ export function taskIconOffset(line: string): number | null
 
 export function decorateIssueLinks(root: HTMLElement): void
 {
+  const decorated = new Set<HTMLElement>();
   for (const link of Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href]'))) {
     if (!ISSUE_URL.test(link.getAttribute('href') ?? '') || !/^#\d+(?:\s|$)/.test(link.textContent ?? '')) continue;
     const item = link.closest<HTMLElement>('li.task-list-item');
-    if (!item || !root.contains(item)) continue;
+    if (!item || !root.contains(item) || decorated.has(item)) continue;
+    decorated.add(item);
     const description = link.closest<HTMLElement>('.task-description, .tasks-list-text');
     const target = description && item.contains(description) ? description : item;
-    if (target.querySelector(':scope > .issue-bridge-github-icon')) continue;
-    const icon = root.ownerDocument.adoptNode(createSpan({ cls: 'issue-bridge-github-icon', attr: { role: 'img', 'aria-label': 'GitHub' } }));
-    if (target !== item) target.prepend(icon);
+    // Tasks may wrap or clone previously decorated markup. Reuse one icon
+    // belonging to this task, regardless of wrappers; leave subtasks alone.
+    const existing = Array.from(item.querySelectorAll<HTMLElement>('.issue-bridge-github-icon'))
+      .filter(icon => icon.closest('li.task-list-item') === item);
+    const icon = existing[0] ?? root.ownerDocument.adoptNode(createSpan({ cls: 'issue-bridge-github-icon', attr: { role: 'img', 'aria-label': 'GitHub' } }));
+    for (const duplicate of existing.slice(1)) duplicate.remove();
+    if (target !== item) {
+      if (target.firstChild !== icon) target.prepend(icon);
+    }
     else {
       const checkbox = item.querySelector('input[type="checkbox"]');
       let anchor: Node | null = checkbox?.closest('li') === item ? checkbox : null;
       while (anchor?.parentNode && anchor.parentNode !== item) anchor = anchor.parentNode;
-      item.insertBefore(icon, anchor ? anchor.nextSibling : item.firstChild);
+      const before = anchor ? anchor.nextSibling : item.firstChild;
+      if (before !== icon) item.insertBefore(icon, before);
     }
   }
 }

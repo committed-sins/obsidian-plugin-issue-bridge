@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6 — 2026-11-20
+
+- Reuse one Octocat per rendered task even when Tasks wraps or clones decorated markup; remove existing duplicates and retain separate icons for subtasks.
+- Keep icon placement stable across overlapping processors and asynchronous re-rendering without modifying Markdown, links or task metadata.
+- Add wrapper, duplicate-repair, nested-task and observer regression coverage. Typecheck, official lint, build and 56 tests pass; no new live UI verification.
+
 ## 0.1.5 — 2026-11-19
 
 - Generate six-character base-36 task IDs with collision checks against IDs in non-excluded notes and newly generated IDs in the sync batch. Keep all existing IDs and dependency references.

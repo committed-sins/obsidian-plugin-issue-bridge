@@ -95,6 +95,53 @@ test('Octocat starts native and Tasks descriptions, stays outside links and is n
   });
 });
 
+test('Octocat reuses a wrapped icon and removes existing duplicates from the same task', async () =>
+{
+  for (const extra of ['', '<span class="issue-bridge-github-icon"></span>']) {
+    await withTaskDom(`<ul><li class="task-list-item"><input type="checkbox"><span class="tasks-list-text"><span class="task-description">${extra}<p><span class="issue-bridge-github-icon"></span>Plain title <a href="https://github.com/o/r/issues/1">#1</a></p></span></span></li></ul>`, root =>
+    {
+      const original = root.querySelector('.issue-bridge-github-icon');
+      decorateIssueLinks(root); decorateIssueLinks(root);
+      assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 1);
+      assert.equal(root.querySelector('.task-description')!.firstChild, original);
+      assert.ok(root.textContent?.includes('Plain title #1'));
+      assert.equal(root.querySelector('a')!.textContent, '#1');
+    });
+  }
+});
+
+test('parent tasks and subtasks each retain their own Octocat across overlapping render roots', async () =>
+{
+  await withTaskDom(`<ul><li class="task-list-item" id="parent"><input type="checkbox">Parent <a href="https://github.com/o/r/issues/1">#1</a> and <a href="https://github.com/o/r/issues/3">#3</a><ul><li class="task-list-item" id="child"><input type="checkbox"><span class="issue-bridge-github-icon"></span>Child <a href="https://github.com/o/r/issues/2">#2</a></li></ul></li></ul>`, root =>
+  {
+    const childIcon = root.querySelector('#child .issue-bridge-github-icon');
+    const parent = root.querySelector<HTMLElement>('#parent')!;
+    decorateIssueLinks(root); decorateIssueLinks(parent); decorateIssueLinks(root);
+    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 2);
+    assert.equal(root.querySelector('#child .issue-bridge-github-icon'), childIcon);
+    assert.equal(Array.from(parent.querySelectorAll('.issue-bridge-github-icon')).filter(icon => icon.closest('li') === parent).length, 1);
+    assert.equal(parent.querySelector('input')!.nextSibling, parent.querySelector('.issue-bridge-github-icon'));
+  });
+});
+
+test('Octocat stays singular when Tasks asynchronously wraps already decorated content', async () =>
+{
+  await withTaskDom('<ul><li class="task-list-item"><span class="task-description">Title <a href="https://github.com/o/r/issues/1">#1</a> 🆔 abc123</span></li></ul>', async root =>
+  {
+    const component = new TaskIcons(root); component.onload();
+    try {
+      const description = root.querySelector('.task-description')!;
+      description.innerHTML = `<p>${description.innerHTML}</p>`;
+      await settle();
+      assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 1);
+      assert.equal((description.firstChild as HTMLElement).className, 'issue-bridge-github-icon');
+      assert.ok(description.textContent?.includes('Title #1 🆔 abc123'));
+      const stable = root.innerHTML;
+      await settle(); assert.equal(root.innerHTML, stable);
+    } finally { component.onunload(); }
+  });
+});
+
 test('Octocat decorates asynchronously rendered Tasks and disconnects its observer on unload', async () =>
 {
   await withTaskDom('<div id="results"></div>', async root =>
