@@ -26,6 +26,8 @@ Imported tasks display an Octocat, a plain title, a linked issue number, then Ta
 
 The Octocat is displayed before the title without adding icon markup to the note.
 
+Under **Source tags → GitHub issues tag**, optionally set a tag such as `#source/github`. Default: empty. The tag is appended on sync, including with Tasks integration disabled, without duplicating an existing identical tag. Changing or clearing the setting preserves tags already stored in notes.
+
 GitHub controls issue titles and open/closed status. Unassigned issues disappear after a successful complete fetch. Notes outside the managed section remain unchanged. Recurring tasks and automatic deletion are unsuitable for imported issues because GitHub controls their lifecycle.
 
 Checks run every five minutes while Obsidian is open, with startup/resume checks and manual sync. New assignments appear in a notice and the status-bar unread list; the first import is quiet.

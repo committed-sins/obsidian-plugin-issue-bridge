@@ -13,7 +13,7 @@ import { readLocalState, type LocalState } from './localState';
 import { isRecord } from './validation';
 const LOCAL_KEY = 'issue-bridge-v1';
 export default class IssueBridge extends Plugin {
-  settings: Settings = { ...DEFAULTS };
+  settings: Settings = { ...DEFAULTS, sourceTags: { ...DEFAULTS.sourceTags } };
   busy = false;
   signingIn = false;
   private alive = false;
@@ -175,7 +175,7 @@ export default class IssueBridge extends Plugin {
   }
   private async taskOptions(): Promise<TaskOptions>
   {
-    const result: TaskOptions = { respectTasks: this.settings.respectTasks, format: 'emoji' };
+    const result: TaskOptions = { respectTasks: this.settings.respectTasks, format: 'emoji', sourceTag: this.settings.sourceTags.githubIssues };
     if (!result.respectTasks) return result;
     const adapter = this.app.vault.adapter;
     const path = `${this.app.vault.configDir}/plugins/obsidian-tasks-plugin/data.json`;

@@ -2,8 +2,9 @@ import { App, PluginSettingTab, Setting, requireApiVersion, type SettingDefiniti
 import { isRecord } from './validation';
 import type IssueBridge from './main';
 import { ISSUE_BRIDGE_APP } from './github/app';
-export interface Settings { clientId: string; autoSync: boolean; startupSync: boolean; intervalMinutes: number; notifyNew: boolean; excludedFolders: string; repositoryProperty: string; respectTasks: boolean }
-export const DEFAULTS: Settings = { clientId: ISSUE_BRIDGE_APP.clientId, autoSync: true, startupSync: true, intervalMinutes: 5, notifyNew: true, excludedFolders: 'archives, templates, scripts, libraries, inbound', repositoryProperty: 'github_repo', respectTasks: true };
+import { cleanSourceTags, EMPTY_SOURCE_TAGS, normalizeSourceTag, SOURCE_TAG_DEFINITIONS, type SourceTags } from './sync/sourceTags';
+export interface Settings { clientId: string; autoSync: boolean; startupSync: boolean; intervalMinutes: number; notifyNew: boolean; excludedFolders: string; repositoryProperty: string; respectTasks: boolean; sourceTags: SourceTags }
+export const DEFAULTS: Settings = { clientId: ISSUE_BRIDGE_APP.clientId, autoSync: true, startupSync: true, intervalMinutes: 5, notifyNew: true, excludedFolders: 'archives, templates, scripts, libraries, inbound', repositoryProperty: 'github_repo', respectTasks: true, sourceTags: { ...EMPTY_SOURCE_TAGS } };
 export function cleanSettings(input: unknown): Settings
 {
   const s = isRecord(input) ? input : {};
@@ -13,6 +14,7 @@ export function cleanSettings(input: unknown): Settings
     notifyNew: typeof s.notifyNew === 'boolean' ? s.notifyNew : DEFAULTS.notifyNew,
     repositoryProperty: typeof s.repositoryProperty === 'string' && s.repositoryProperty.trim() ? s.repositoryProperty.trim() : DEFAULTS.repositoryProperty,
     respectTasks: typeof s.respectTasks === 'boolean' ? s.respectTasks : DEFAULTS.respectTasks,
+    sourceTags: cleanSourceTags(s.sourceTags),
     intervalMinutes: typeof s.intervalMinutes === 'number' && Number.isFinite(s.intervalMinutes) ? Math.max(1, Math.min(1440, Math.round(s.intervalMinutes))) : DEFAULTS.intervalMinutes,
     excludedFolders: typeof s.excludedFolders === 'string' ? s.excludedFolders : DEFAULTS.excludedFolders };
 }
@@ -87,6 +89,36 @@ export class IssueBridgeSettings extends PluginSettingTab
           }));
         }
       },
+      {
+        name: 'Source tags',
+        desc: 'Optional tags appended to imported tasks, configured separately for each source.',
+        render: row =>
+        {
+          row.setHeading();
+        }
+      },
+      ...SOURCE_TAG_DEFINITIONS.map(source =>
+      {
+        const desc = 'One optional tag, with or without #. Leave empty to stop adding it. Existing tags remain when changing or clearing this field. Also works with Respect Obsidian Tasks disabled.';
+        return {
+          name: `${source.name} tag`, desc,
+          render: (row: Setting) =>
+          {
+            row.addText(text => text.setPlaceholder(source.placeholder).setValue(p.settings.sourceTags[source.id]).onChange(async value =>
+            {
+              let tag: string;
+              try { tag = normalizeSourceTag(value); }
+              catch (error) {
+                row.setDesc(error instanceof Error ? error.message : 'Use one valid tag.');
+                return;
+              }
+              row.setDesc(desc);
+              p.settings.sourceTags = { ...p.settings.sourceTags, [source.id]: tag };
+              await p.saveSettings();
+            }));
+          }
+        };
+      }),
       {
         name: 'Repository access',
         desc: 'Install Issue Bridge by Committed Sins on selected repositories before syncing. The app is limited to the Committed Sins organization and requests Issues: read-only. Private issue titles and links are saved in your notes and follow the vault’s sync and sharing settings.',

@@ -1,5 +1,13 @@
 # Test preview setup
 
+## Optional source tags in 0.1.7
+
+**Source tags → GitHub issues tag** configures one optional tag for the GitHub Issues source. The default is empty. Accepts a tag with or without `#`, including nested names such as `source/github`; whitespace, multiple tags, numeric-only names and unsafe Markdown are rejected. Invalid edits leave the last valid saved value intact. Invalid persisted values are ignored.
+
+The tag is appended to imported issue tasks on sync, independently of **Respect Obsidian Tasks**. Existing identical tags are recognized case-insensitively; sub-tags or longer names are distinct. Existing local tags, dates and IDs are preserved. Changing the configured value adds the new tag; clearing it stops future additions. Already stored tags are not removed automatically. This avoids treating a local tag as plugin-owned.
+
+Configure source tags separately through the source registry; currently GitHub Issues is the only source. Settings persist under `sourceTags.githubIssues`. The Octocat remains visual and independent of source tags. To query tagged tasks, use `tags include #source/github` in a Tasks query.
+
 ## Task descriptions and IDs in 0.1.5
 
 Imported lines use `- [ ] Plain title [#42](https://github.com/owner/repository/issues/42)` followed by local planning and generated Tasks metadata. Only the issue number is linked. The Octocat appears before the title through editor decorations and a render child that also handles asynchronously drawn Tasks results. No icon markup is stored in notes.

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { START, END, createTaskId, duplicateRepos, normalizeRepo, repositoryFromProperty, renderTasks, taskIds, updateBlock, newIssueNumbers, safeTitle } from '../src/sync/core';
 import { decorateIssueLinks, registerTaskIcons, taskIconOffset, TaskIcons } from '../src/sync/icons';
 import { parseHTML } from 'linkedom';
+import { appendSourceTag, cleanSourceTags, normalizeSourceTag } from '../src/sync/sourceTags';
 import { GitHubClient, ApiError, type Issue } from '../src/github/client';
 import { pollForToken, requestDeviceCode, refreshAccessToken, pause, type Http } from '../src/github/auth';
 import { Session } from '../src/github/session';
@@ -18,6 +19,63 @@ import { RepositoryPreview } from '../src/preview/block';
 const fixture: Issue[] = [{ number: 2, title: 'Keep context', state: 'open', createdAt: '2026-11-01T10:00:00Z' }, { number: 1, title: 'Done', state: 'closed', createdAt: '2026-10-01T10:00:00Z' }];
 const issue = (number: number, state = 'open') => ({ number, title: `Issue ${number}`, state, created_at: '2026-11-01T10:00:00Z', assignees: [{ login: 'tester' }] });
 const ok = (json: unknown) => ({ status: 200, json });
+
+test('source tags default to empty and normalize one safe configurable tag per known source', () =>
+{
+  assert.deepEqual(cleanSettings(null).sourceTags, { githubIssues: '' });
+  assert.deepEqual(cleanSourceTags(null), { githubIssues: '' });
+  assert.deepEqual(cleanSourceTags({ githubIssues: ' source/github ', futureSource: '#other' }), { githubIssues: '#source/github' });
+  assert.equal(normalizeSourceTag(''), '');
+  assert.equal(normalizeSourceTag('#GitHub/Issues'), '#GitHub/Issues');
+  assert.equal(normalizeSourceTag('quelle/Überprüfung'), '#quelle/Überprüfung');
+  assert.equal(normalizeSourceTag('source/🐙'), '#source/🐙');
+  for (const tag of ['#', '#1234', '#１２３', '#\u200D', '#1234\u200D', '#one #two', '#one\n#two', '#one\tbad', '#/github', '#github/', '#github//issues', '#github<script>', '#github`code', '#github|table']) {
+    assert.throws(() => normalizeSourceTag(tag));
+    assert.deepEqual(cleanSourceTags({ githubIssues: tag }), { githubIssues: '' });
+  }
+  assert.deepEqual(cleanSettings({ sourceTags: { githubIssues: 42 } }).sourceTags, { githubIssues: '' });
+});
+
+test('source tag deduplication respects exact tags, case, punctuation, Unicode and escaped text', () =>
+{
+  for (const suffix of [' #source/github', ' #SOURCE/GITHUB', ' (#source/github),', ' #personal #source/github ➕ 2026-11-20']) {
+    assert.equal(appendSourceTag(suffix, '#source/github'), suffix);
+  }
+  for (const suffix of [' #source/github-other', ' #source/github/issues', ' \\#source/github']) {
+    assert.equal(appendSourceTag(suffix, '#source/github'), `${suffix} #source/github`);
+  }
+  assert.equal(appendSourceTag(' #quelle/überprüfung', '#quelle/Überprüfung'), ' #quelle/überprüfung');
+  assert.equal(appendSourceTag(' #source/🐙', '#source/🐙'), ' #source/🐙');
+  assert.equal(appendSourceTag(' #personal', ''), ' #personal');
+});
+
+test('source tags append after Tasks metadata and also work when Tasks integration is disabled', () =>
+{
+  for (const respectTasks of [false, true]) {
+    for (const format of ['emoji', 'dataview'] as const) {
+      const options = { respectTasks, format, sourceTag: '#source/github', globalFilter: '#source/github' };
+      const first = updateBlock('Local note\n', 0, 'o/r', [fixture[0]], options);
+      assert.equal(first.match(/#source\/github/g)?.length, 1);
+      assert.equal(first.includes('🆔') || first.includes('[id::'), respectTasks);
+      assert.equal(updateBlock(first, 0, 'o/r', [fixture[0]], options), first);
+      const planned = first.replace('<!-- issue-bridge:end -->', '').trimEnd() + ' #personal 📅 2026-12-01\n' + END + '\n';
+      const next = updateBlock(planned, 0, 'o/r', [{ ...fixture[0], title: 'Updated', state: 'closed' }], options);
+      assert.ok(next.includes(' #personal 📅 2026-12-01'));
+      assert.equal(next.match(/#source\/github/g)?.length, 1);
+      assert.ok(next.includes('- [x] Updated [#2]'));
+    }
+  }
+  assert.throws(() => renderTasks('o/r', fixture, '\n', { respectTasks: false, format: 'emoji', sourceTag: '#invalid tag' }));
+});
+
+test('changing or clearing source tag settings preserves existing tags and local metadata', () =>
+{
+  const options = { respectTasks: false, format: 'emoji' as const, sourceTag: '#source/github' };
+  const first = updateBlock('', 0, 'o/r', [fixture[0]], options);
+  const changed = updateBlock(first, 0, 'o/r', [fixture[0]], { ...options, sourceTag: '#issue/github' });
+  assert.ok(changed.includes('#source/github #issue/github'));
+  assert.equal(updateBlock(changed, 0, 'o/r', [fixture[0]], { ...options, sourceTag: '' }), changed);
+});
 
 test('new Tasks IDs have six base-36 characters and retry collisions or short candidates', () =>
 {
@@ -495,6 +553,44 @@ test('declarative settings are searchable and share controls with the legacy ren
     host.containerEl.rows.find(row => row.name === 'Connection')!.controls[1].click!();
     assert.equal(host.updates, 1);
   } finally { settingsHost.modern = true; }
+});
+
+test('source tag settings validate before saving and retain the last valid value on invalid input', async () =>
+{
+  const r = runtime(); let saves = 0;
+  r.plugin.saveSettings = async () =>
+  {
+    saves++;
+  };
+  const tab = new IssueBridgeSettings(r.app, r.plugin);
+  const definition = tab.getSettingDefinitions().find(row => row.name === 'GitHub issues tag')!;
+  assert.ok(definition);
+  const row = new Setting({ rows: [] });
+  definition.render(row as unknown as ObsidianSetting, {} as SettingGroup);
+  const input = row.controls[0];
+  await input.change!('source/github');
+  assert.equal(r.plugin.settings.sourceTags.githubIssues, '#source/github'); assert.equal(saves, 1);
+  await input.change!('#invalid tag');
+  assert.equal(r.plugin.settings.sourceTags.githubIssues, '#source/github'); assert.equal(saves, 1);
+  assert.ok(String(row.desc).includes('without spaces'));
+  await input.change!('');
+  assert.equal(r.plugin.settings.sourceTags.githubIssues, ''); assert.equal(saves, 2);
+  assert.equal(runtime().plugin.settings.sourceTags.githubIssues, '');
+});
+
+test('runtime applies source tags without Tasks integration and clearing stops tagging new imports', async () =>
+{
+  const r = runtime(); r.plugin.settings.respectTasks = false;
+  r.plugin.settings.sourceTags.githubIssues = '#source/github';
+  await r.plugin.sync(false);
+  const first = r.docs.get(r.file.path)!;
+  assert.ok(first.includes(') #source/github')); assert.ok(!first.includes('🆔'));
+  await r.plugin.sync(false); assert.equal(r.writes(), 1);
+  r.plugin.settings.sourceTags.githubIssues = '';
+  r.setIssues([issue(1), issue(2)]); await r.plugin.sync(false);
+  const lines = r.docs.get(r.file.path)!.split('\n');
+  assert.ok(lines.find(line => line.includes('[#1]'))!.endsWith('#source/github'));
+  assert.ok(!lines.find(line => line.includes('[#2]'))!.includes('#source/github'));
 });
 
 test('runtime reserves IDs from unmapped non-excluded notes before generating an imported ID', async () =>

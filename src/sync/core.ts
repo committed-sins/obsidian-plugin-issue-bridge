@@ -1,4 +1,5 @@
 import type { Issue } from '../github/client';
+import { appendSourceTag, normalizeSourceTag } from './sourceTags';
 export const START = '<!-- issue-bridge:start -->';
 export const END = '<!-- issue-bridge:end -->';
 export function normalizeRepo(value: unknown): string
@@ -23,7 +24,7 @@ export function repositoryFromProperty(value: unknown): string | null
   return null;
 }
 
-export interface TaskOptions { respectTasks: boolean; format: 'emoji' | 'dataview'; globalFilter?: string; usedIds?: Set<string> }
+export interface TaskOptions { respectTasks: boolean; format: 'emoji' | 'dataview'; globalFilter?: string; usedIds?: Set<string>; sourceTag?: string }
 const PLAIN_TASKS: TaskOptions = { respectTasks: false, format: 'emoji' };
 const ID_PATTERN = /(?:🆔\uFE0F?\s*([a-z\d_-]+)|[[(]\s*id::\s*([a-z\d_-]+)\s*[\])])/i;
 
@@ -71,6 +72,7 @@ export function safeTitle(title: string): string
 }
 export function renderTasks(repo: string, issues: Issue[], eol = '\n', options = PLAIN_TASKS, previous = ''): string
 {
+  const sourceTag = normalizeSourceTag(options.sourceTag ?? '');
   const usedIds = options.usedIds ?? new Set<string>();
   for (const id of taskIds(previous)) usedIds.add(id);
   const metadataOptions = { ...options, usedIds };
@@ -85,7 +87,7 @@ export function renderTasks(repo: string, issues: Issue[], eol = '\n', options =
   }
   return [...issues].sort((a, b) => a.number - b.number).map(issue =>
   {
-    const suffix = taskMetadata(issue, suffixes.get(issue.number) ?? '', metadataOptions);
+    const suffix = appendSourceTag(taskMetadata(issue, suffixes.get(issue.number) ?? '', metadataOptions), sourceTag);
     return `- [${issue.state === 'closed' ? 'x' : ' '}] ${safeTitle(issue.title)} [#${issue.number}](https://github.com/${repo}/issues/${issue.number})${suffix}`;
   }).join(eol);
 }

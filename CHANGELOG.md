@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.7 — 2026-11-20
+
+- Add an optional tag per source under Source tags, initially GitHub Issues. Default: empty; applies independently of Tasks integration.
+- Validate and normalize a single tag, append without case-insensitive duplicates, and preserve existing tags when the configured tag changes or is cleared.
+- Add settings, normalization, renderer and full-sync regression coverage. Typecheck, official lint, build and 62 tests pass; no new live UI verification.
+
 ## 0.1.6 — 2026-11-20
 
 - Reuse one Octocat per rendered task even when Tasks wraps or clones decorated markup; remove existing duplicates and retain separate icons for subtasks.
