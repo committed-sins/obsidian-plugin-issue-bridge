@@ -5,7 +5,23 @@ export const editorLivePreviewField = StateField.define<boolean>({
   create: () => true,
   update: value => value
 });
-export class TFile { constructor(public path = '') {} }
+export class TFile
+{
+  constructor(public path = '')
+  {}
+
+  get extension(): string
+  {
+    return /\.([^.\/]+)$/.exec(this.path)?.[1] ?? '';
+  }
+}
+export class TFolder
+{
+  children: (TFolder | TFile)[] = [];
+
+  constructor(public path: string)
+  {}
+}
 export class MarkdownView { constructor(public file: TFile, private text: string) {} getViewData() { return this.text; } }
 export class Notice { static messages: string[] = []; constructor(message: string) { Notice.messages.push(message); } }
 export class Plugin { constructor(public app: any, public manifest: any) {} }

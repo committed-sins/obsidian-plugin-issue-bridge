@@ -48,7 +48,7 @@ Expand to load; refresh or open the source on GitHub. Other relative `.md` paths
 
 The built-in GitHub App currently supports **Committed Sins only**. For other accounts, configure your own Device Flow-enabled GitHub App with **Issues: read-only**. Tokens stay in Obsidian SecretStorage; imported issue titles and links are saved in your vault.
 
-Release artifacts have SHA-256 checksums and GitHub build-provenance attestations starting with 0.1.3:
+Releases provide SHA-256 checksums and GitHub build-provenance attestations. New releases list the checksums in the release notes.
 
 ```sh
 gh attestation verify main.js --repo committed-sins/obsidian-plugin-issue-bridge

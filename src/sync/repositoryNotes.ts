@@ -1,4 +1,4 @@
-import { MarkdownView, TFile, type App } from 'obsidian';
+import { MarkdownView, TFile, TFolder, type App } from 'obsidian';
 import type { Issue } from '../github/client';
 import { readRepositoryMapping, type Mapping } from './repositoryMapping';
 import { taskIds, type TaskOptions } from './taskMarkdown';
@@ -25,9 +25,19 @@ export class RepositoryNotes
     return this.excludedFolders.some(folder => path === folder || path.startsWith(folder + '/'));
   }
 
+  private *markdownFiles(folder: TFolder): Iterable<TFile>
+  {
+    for (const child of folder.children) {
+      if (this.excluded(child.path)) continue;
+      if (child instanceof TFolder) yield* this.markdownFiles(child);
+      else if (child instanceof TFile && child.extension === 'md') yield child;
+    }
+  }
+
   async *scan(onInvalid?: (path: string) => void): AsyncIterable<Mapping>
   {
-    for (const file of this.app.vault.getMarkdownFiles()) {
+    const files = [...this.markdownFiles(this.app.vault.getRoot())];
+    for (const file of files) {
       if (!this.active()) break;
       if (this.excluded(file.path)) continue;
       const content = await this.app.vault.read(file);

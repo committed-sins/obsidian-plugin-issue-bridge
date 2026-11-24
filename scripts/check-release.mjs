@@ -8,12 +8,12 @@ const versions = JSON.parse(await readFile('versions.json', 'utf8'));
 if (!tag || !/^\d+\.\d+\.\d+$/.test(tag) || tag !== manifest.version || tag !== pkg.version || versions[tag] !== manifest.minAppVersion) {
   throw new Error('Release tag, package, manifest and supported app version must match.');
 }
-await readFile(`docs/releases/${tag}.md`, 'utf8');
+const notes = await readFile(`docs/releases/${tag}.md`, 'utf8');
 let checksums = '';
 for (const file of ['main.js', 'manifest.json', 'styles.css']) {
   const data = await readFile(`dist/${file}`);
   if (!data.length) throw new Error(`Empty release artifact: ${file}`);
   checksums += `${createHash('sha256').update(data).digest('hex')}  ${file}\n`;
 }
-await writeFile('dist/SHA256SUMS', checksums);
+await writeFile('dist/RELEASE_NOTES.md', `${notes.trimEnd()}\n\n## SHA-256 checksums\n\n\`\`\`text\n${checksums}\`\`\`\n`);
 console.log(`Validated Issue Bridge ${tag} release artifacts.`);

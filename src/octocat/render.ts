@@ -22,7 +22,7 @@ export function renderOctocats(root: HTMLElement): void
   }
   for (const node of matches) {
     const parts = node.data.split(OCTOCAT);
-    const fragment = doc.createDocumentFragment();
+    const fragment = doc.adoptNode(createFragment());
     for (const [index, part] of parts.entries()) {
       if (index) fragment.append(createOctocat(doc));
       if (part) fragment.append(doc.createTextNode(part));

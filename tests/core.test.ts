@@ -16,7 +16,7 @@ import { cleanSettings, IssueBridgeSettings } from '../src/settings';
 import { readLocalState } from '../src/localState';
 import type { MarkdownPostProcessor, Plugin, Setting as ObsidianSetting, SettingGroup } from 'obsidian';
 import { ISSUE_BRIDGE_APP } from '../src/github/app';
-import { TFile, MarkdownView, Notice, Setting, settingsHost } from './obsidian';
+import { TFile, TFolder, MarkdownView, Notice, Setting, settingsHost } from './obsidian';
 import { previewPath, previewHtml } from '../src/preview/markdown';
 import { PreviewCache } from '../src/preview/cache';
 import { RepositoryPreview } from '../src/preview/block';
@@ -114,10 +114,12 @@ async function withTaskDom(html: string, run: (root: HTMLElement) => void | Prom
 {
   const dom = parseHTML(`<html><body>${html}</body></html>`);
   const originalSpan = Object.getOwnPropertyDescriptor(globalThis, 'createSpan');
+  const originalFragment = Object.getOwnPropertyDescriptor(globalThis, 'createFragment');
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   // Linkedom has no adoptNode; our helper already creates nodes in this document.
   Object.defineProperty(dom.document, 'adoptNode', { value: (node: Node) => node });
   Object.defineProperty(globalThis, 'window', { configurable: true, value: dom.window });
+  Object.defineProperty(globalThis, 'createFragment', { configurable: true, value: () => dom.document.createDocumentFragment() });
   Object.defineProperty(globalThis, 'createSpan', { configurable: true, value: (options: { cls: string; attr: Record<string, string> }) =>
   {
     const span = dom.document.createElement('span'); span.className = options.cls;
@@ -128,6 +130,8 @@ async function withTaskDom(html: string, run: (root: HTMLElement) => void | Prom
   finally {
     if (originalSpan) Object.defineProperty(globalThis, 'createSpan', originalSpan);
     else Reflect.deleteProperty(globalThis, 'createSpan');
+    if (originalFragment) Object.defineProperty(globalThis, 'createFragment', originalFragment);
+    else Reflect.deleteProperty(globalThis, 'createFragment');
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
     else Reflect.deleteProperty(globalThis, 'window');
   }
@@ -440,7 +444,27 @@ function runtime() {
   const local = { secretId: 'issue-bridge-test', snapshots: {}, unread: [], lastSync: 0, summary: '' };
   const app: any = {
     vault: {
-      getMarkdownFiles: () => [...docs.keys()].map(path => path === file.path ? file : Object.assign(new TFile(), { path })),
+      getRoot: () =>
+      {
+        const root = new TFolder('/');
+        const folders = new Map<string, TFolder>([['', root]]);
+        for (const path of docs.keys()) {
+          let parent = root;
+          let folderPath = '';
+          for (const segment of path.split('/').slice(0, -1)) {
+            folderPath = folderPath ? `${folderPath}/${segment}` : segment;
+            let folder = folders.get(folderPath);
+            if (!folder) {
+              folder = new TFolder(folderPath);
+              folders.set(folderPath, folder);
+              parent.children.push(folder);
+            }
+            parent = folder;
+          }
+          parent.children.push(path === file.path ? file : new TFile(path));
+        }
+        return root;
+      },
       read: async (f: TFile) => docs.get(f.path)!,
       getAbstractFileByPath: (path: string) => path === file.path ? file : null,
       process: async (f: TFile, fn: (value: string) => string) => { const result = fn(docs.get(f.path)!); writes++; docs.set(f.path, result); }
@@ -641,7 +665,26 @@ test('runtime malformed markers are retained and excluded folders are not import
   const r = runtime(); r.docs.set(r.file.path, r.docs.get(r.file.path)! + START);
   await r.plugin.sync(false); assert.equal(r.writes(), 0);
   const other = runtime(); other.plugin.settings.excludedFolders = 'notes';
-  await other.plugin.sync(false); assert.equal(other.writes(), 0);
+  const root = other.app.vault.getRoot() as TFolder;
+  const excluded = root.children.find(child => child.path === 'notes')!;
+  let enumerated = false;
+  let reads = 0;
+  Object.defineProperty(excluded, 'children', { get: () =>
+  {
+    enumerated = true;
+    return [other.file];
+  } });
+  root.children.push(new TFile('image.png'));
+  other.app.vault.getRoot = () => root;
+  other.app.vault.read = async () =>
+  {
+    reads++;
+    return other.docs.get(other.file.path)!;
+  };
+  await other.plugin.sync(false);
+  assert.equal(other.writes(), 0);
+  assert.equal(enumerated, false);
+  assert.equal(reads, 0);
 });
 test('runtime unsaved editor buffers defer updates', async () => {
   const r = runtime();

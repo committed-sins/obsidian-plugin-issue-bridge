@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.10 — 2026-11-24
+
+- Use the Obsidian fragment helper for Octocat rendering and preserve the rounded icon size with a CSS feature check.
+- Skip excluded folders before listing their contents during synchronization.
+- List SHA-256 checksums in the release notes and attach the three attested plugin files.
+
 ## 0.1.9 — 2026-11-24
 
 - Round Octocat dimensions to whole CSS pixels to prevent adjacent icons from appearing different sizes.
