@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { START, END, createTaskId, duplicateRepos, normalizeRepo, repositoryFromProperty, renderTasks, taskIds, updateBlock, newIssueNumbers, safeTitle } from '../src/sync/core';
+import { createTaskId, renderTasks, taskIds, safeTitle } from '../src/sync/taskMarkdown';
+import { duplicateRepos, normalizeRepo, repositoryFromProperty } from '../src/sync/repositoryMapping';
+import { START, END, updateBlock } from '../src/sync/managedBlock';
+import { newIssueNumbers } from '../src/sync/assignmentHistory';
 import { literalLines, shortcodeOffsets } from '../src/octocat/editor';
 import { renderOctocats, registerOctocatRenderer, OctocatRenderChild } from '../src/octocat/render';
 import { parseHTML } from 'linkedom';

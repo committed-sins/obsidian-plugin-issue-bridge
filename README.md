@@ -54,7 +54,7 @@ Release artifacts have SHA-256 checksums and GitHub build-provenance attestation
 gh attestation verify main.js --repo committed-sins/obsidian-plugin-issue-bridge
 ```
 
-Settings are searchable on Obsidian 1.13+; older versions retain the settings page (minimum 1.11.4). Version 0.1.2 passed desktop acceptance. Later changes have automated coverage; visual verification, mobile, live token renewal and private README access remain pending. Not yet in the community directory.
+Settings are searchable on Obsidian 1.13+. The minimum version is 1.11.4. Version 0.1.8 was tested on Windows in Obsidian 1.15.1. See the [release notes](docs/releases/0.1.8.md) for the tested scenarios. Mobile, live token renewal and private README access remain unverified.
 
 ## Development
 

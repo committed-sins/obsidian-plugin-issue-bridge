@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.8 — 2026-11-24
+
+- Render `:octocat:` in note prose, headings and task descriptions. Imported GitHub Issues now use the same editable shortcode.
+- Separate task formatting, managed note updates, synchronization, repository previews and the unread issues dialog into focused modules.
+
 ## 0.1.7 — 2026-11-20
 
 - Add an optional tag per source under Source tags, initially GitHub Issues. Default: empty; applies independently of Tasks integration.

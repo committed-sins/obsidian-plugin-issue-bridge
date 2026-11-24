@@ -1,19 +1,19 @@
-import { Plugin, Notice, Modal, MarkdownView, TFile, getFrontMatterInfo, parseYaml, requestUrl } from 'obsidian';
+import { Plugin, Notice, requestUrl } from 'obsidian';
 import { Session } from './github/session';
 import { GitHubClient, ApiError } from './github/client';
 import type { Http } from './github/auth';
 import { DeviceFlowModal } from './deviceFlowModal';
 import { cleanSettings, DEFAULTS, IssueBridgeSettings, type Settings } from './settings';
-import { duplicateRepos, newIssueNumbers, repositoryFromProperty, taskIds, updateBlock, type Mapping, type TaskOptions } from './sync/core';
+import { syncAssignedIssues } from './sync/issueSync';
 import { registerRepositoryPreview } from './preview/block';
-import { PreviewCache } from './preview/cache';
-import { previewPath } from './preview/markdown';
+import { RepositoryPreviewService } from './preview/repositoryPreview';
 import { octocatEditor } from './octocat/editor';
 import { registerOctocatRenderer } from './octocat/render';
 import { readLocalState, type LocalState } from './localState';
-import { isRecord } from './validation';
+import { showUnreadIssues } from './ui/unreadIssues';
 const LOCAL_KEY = 'issue-bridge-v1';
-export default class IssueBridge extends Plugin {
+export default class IssueBridge extends Plugin
+{
   settings: Settings = { ...DEFAULTS, sourceTags: { ...DEFAULTS.sourceTags } };
   busy = false;
   signingIn = false;
@@ -26,7 +26,7 @@ export default class IssueBridge extends Plugin {
   private statusEl?: HTMLElement;
   private retryAt = 0;
   private vaultRevision = 0;
-  private previews = new PreviewCache();
+  private readonly previews = new RepositoryPreviewService(this.app.vault);
   private http: Http = async request =>
   {
     try {
@@ -42,11 +42,11 @@ export default class IssueBridge extends Plugin {
     this.settings = cleanSettings(await this.loadData());
     this.local = readLocalState(this.app.loadLocalStorage(LOCAL_KEY));
     this.persistLocal();
+    this.registerEditorExtension(octocatEditor);
+    registerOctocatRenderer(this);
     if (!this.app.secretStorage) { new Notice('Issue Bridge requires Obsidian SecretStorage. Update Obsidian before signing in.'); return; }
     this.session = new Session(this.http, this.app.secretStorage, this.local.secretId, () => this.alive);
     registerRepositoryPreview(this, (note, path, force) => this.repositoryPreview(note, path, force));
-    this.registerEditorExtension(octocatEditor);
-    registerOctocatRenderer(this);
     this.addSettingTab(new IssueBridgeSettings(this.app, this));
     const changed = () => { this.vaultRevision++; };
     this.registerEvent(this.app.vault.on('modify', changed));
@@ -73,32 +73,14 @@ export default class IssueBridge extends Plugin {
     this.schedule();
   }
   onunload() { this.alive = false; this.epoch++; this.previews.clear(); if (this.timer) window.clearInterval(this.timer); this.modal?.close(); }
-  private async repositoryPreview(note: string, path: string, force: boolean)
+  private repositoryPreview(note: string, path: string, force: boolean)
   {
-    path = previewPath(path);
-    const file = this.app.vault.getAbstractFileByPath(note);
-    if (!(file instanceof TFile)) throw new Error(`Save this note and add its ${this.settings.repositoryProperty} property first.`);
-    const repo = this.mapping(await this.app.vault.read(file))?.repo;
-    if (!repo) throw new Error(`Add a GitHub repository URL to this note’s ${this.settings.repositoryProperty} property.`);
-    const epoch = this.epoch, active = () => this.alive && this.epoch === epoch;
-    if (!active()) throw new Error('Preview cancelled.');
-    const result = await this.previews.get(`${epoch}:${repo}:${path}`, force, async () => {
-      try { return await new GitHubClient(this.http, '', active).repositoryMarkdown(repo, path); }
-      catch (error) {
-        if (!(error instanceof ApiError) || error.status !== 404) throw error;
-        if (!this.hasCredential()) throw new Error('File not found or repository is private. Check the path and sign in; private files also require Contents: read-only permission.');
-        const token = await this.session.token();
-        if (!active()) throw new Error('Preview cancelled.');
-        try { return await new GitHubClient(this.http, token, active).repositoryMarkdown(repo, path); }
-        catch (error) {
-          if (error instanceof ApiError && [403, 404].includes(error.status)) throw new Error('File unavailable. Check its path and app installation; private repository files also require Contents: read-only permission.');
-          throw error;
-        }
-      }
-    });
-    if (!active() || this.mapping(await this.app.vault.read(file))?.repo !== repo) throw new Error('Repository mapping or connection changed. Refresh the preview.');
-    return result;
+    const epoch = this.epoch;
+    const property = this.settings.repositoryProperty;
+    const active = () => this.alive && this.epoch === epoch && this.settings.repositoryProperty === property;
+    return this.previews.load(note, path, force, property, this.http, active, () => this.hasCredential() ? this.session.token() : Promise.resolve(null));
   }
+
   private persistLocal() { this.app.saveLocalStorage(LOCAL_KEY, this.local); }
   async saveSettings() { await this.saveData(this.settings); this.schedule(); }
   private schedule() {
@@ -144,63 +126,17 @@ export default class IssueBridge extends Plugin {
     this.statusEl?.setText(this.busy ? 'Issue Bridge: syncing…' : `Issue Bridge${this.local.unread.length ? `: ${this.local.unread.length} new` : ''}`);
     this.statusEl?.setAttribute('title', this.statusText());
   }
-  showNewIssues(onSeen?: () => void)
+  showNewIssues(onSeen?: () => void): void
   {
-    const modal = new Modal(this.app);
-    modal.titleEl.setText('Issue Bridge — new assigned issues');
-    modal.contentEl.createEl('p', { text: this.statusText() });
-    for (const item of this.local.unread) {
-      const row = modal.contentEl.createEl('p');
-      row.createEl('a', { text: `${item.repo} #${item.number}`, href: `https://github.com/${item.repo}/issues/${item.number}` }).setAttribute('target', '_blank');
-      row.appendText(' · ');
-      const note = row.createEl('a', { text: item.path, href: '#' });
-      note.onclick = event => { event.preventDefault(); void this.app.workspace.openLinkText(item.path, '', false); modal.close(); };
-    }
-    if (!this.local.unread.length) modal.contentEl.createEl('p', { text: 'No new issues since the initial import or your last acknowledgment.' });
-    const button = modal.contentEl.createEl('button', { text: 'Mark all as seen' });
-    button.onclick = () =>
+    showUnreadIssues(this.app, this.local.unread, this.statusText(), () =>
     {
-      this.local.unread = []; this.persistLocal(); this.updateStatus(); modal.close(); onSeen?.();
-    };
-    modal.open();
-  }
-  private mapping(content: string): { repo: string; bodyOffset: number } | null
-  {
-    const info = getFrontMatterInfo(content);
-    if (!info.exists) return null;
-    const fm: unknown = parseYaml(info.frontmatter);
-    const property = this.settings.repositoryProperty;
-    if (!isRecord(fm) || !Object.prototype.hasOwnProperty.call(fm, property)) return null;
-    const repo = repositoryFromProperty(fm[property]);
-    return repo ? { repo, bodyOffset: info.contentStart } : null;
-  }
-  private async taskOptions(): Promise<TaskOptions>
-  {
-    const result: TaskOptions = { respectTasks: this.settings.respectTasks, format: 'emoji', sourceTag: this.settings.sourceTags.githubIssues };
-    if (!result.respectTasks) return result;
-    const adapter = this.app.vault.adapter;
-    const path = `${this.app.vault.configDir}/plugins/obsidian-tasks-plugin/data.json`;
-    if (!adapter || !await adapter.exists(path)) return result;
-    // Read saved public configuration only; no dependency on Tasks internals.
-    const config: unknown = JSON.parse(await adapter.read(path));
-    if (!isRecord(config)) throw new Error('Invalid Tasks configuration; previous tasks retained.');
-    if (config.taskFormat === 'dataview') result.format = 'dataview';
-    else if (config.taskFormat && config.taskFormat !== 'tasksPluginEmoji') throw new Error('Unsupported Tasks format; previous tasks retained.');
-    if (typeof config.globalFilter === 'string' && config.globalFilter.trim()) {
-      if (/[\r\n<>]/.test(config.globalFilter)) throw new Error('Unsupported Tasks global filter; previous tasks retained.');
-      result.globalFilter = config.globalFilter.trim();
-    }
-    return result;
-  }
-  private excluded(path: string) {
-    return this.settings.excludedFolders.split(',').map(x => x.trim().replace(/^\/+|\/+$/g, '')).filter(Boolean).some(folder => path === folder || path.startsWith(folder + '/'));
-  }
-  private dirty(file: TFile, content: string) {
-    return this.app.workspace.getLeavesOfType('markdown').some(leaf => {
-      const view = leaf.view;
-      return view instanceof MarkdownView && view.file === file && view.getViewData() !== content;
+      this.local.unread = [];
+      this.persistLocal();
+      this.updateStatus();
+      onSeen?.();
     });
   }
+
   async sync(manual: boolean)
   {
     if (!this.alive || this.busy || this.signingIn) { if (manual) new Notice('Issue Bridge is already busy.'); return; }
@@ -208,96 +144,22 @@ export default class IssueBridge extends Plugin {
     if (Date.now() < this.retryAt) { if (manual) new Notice('GitHub rate limit: wait until the retry time shown in Issue Bridge settings.'); return; }
     this.busy = true; this.updateStatus();
     const epoch = this.epoch, active = () => this.alive && epoch === this.epoch;
-    let updated = 0, added = 0, completed = 0;
-    const warnings: string[] = [];
     try {
-      const configuration = JSON.stringify(this.settings);
-      const taskOptions = await this.taskOptions();
-      taskOptions.usedIds = new Set<string>();
-      if (JSON.stringify(this.settings) !== configuration) throw new Error('Settings changed during sync; retry.');
-      const mappings: Mapping[] = [];
-      for (const file of this.app.vault.getMarkdownFiles()) {
-        if (!active()) return;
-        if (this.excluded(file.path)) continue;
-        const content = await this.app.vault.read(file);
-        for (const id of taskIds(content)) taskOptions.usedIds.add(id);
-        try { const m = this.mapping(content); if (m) mappings.push({ path: file.path, content, ...m }); }
-        catch { warnings.push(`${file.path}: invalid frontmatter or repository property; skipped.`); }
-      }
-      const duplicates = duplicateRepos(mappings);
-      if (!mappings.length) {
-        this.local.summary = warnings.length ? warnings.join('\n') : `No mapped notes. Add a GitHub repository URL to ${this.settings.repositoryProperty} to start importing.`;
-      } else {
-        const token = await this.session.token();
-        const client = new GitHubClient(this.http, token, active);
-        const login = await client.currentUser();
-        const credential = this.session.read();
-        if (!credential || login.toLowerCase() !== credential.login.toLowerCase()) throw new Error('Connected account changed. Disconnect and sign in again.');
-        for (const mapping of mappings) {
-          if (!active()) return;
-          if (duplicates.has(mapping.repo)) { warnings.push(`${mapping.path}: duplicate repository mapping; skipped.`); continue; }
-          try {
-            const issues = await client.assignedIssues(mapping.repo, login);
-            if (!active()) return;
-            const file = this.app.vault.getAbstractFileByPath(mapping.path);
-            if (!(file instanceof TFile)) throw new Error('Note moved during sync; retry.');
-            // Read mappings again after the network await. Do not rely on a
-            // possibly stale metadata cache to detect a new duplicate mapping.
-            const revision = this.vaultRevision;
-            let owners = 0;
-            for (const candidate of this.app.vault.getMarkdownFiles()) {
-              if (this.excluded(candidate.path)) continue;
-              const bytes = await this.app.vault.read(candidate);
-              for (const id of taskIds(bytes)) taskOptions.usedIds.add(id);
-              try { if (this.mapping(bytes)?.repo === mapping.repo) owners++; }
-              catch { /* Invalid mappings are reported by the main scan. */ }
-            }
-            if (!active() || revision !== this.vaultRevision || owners !== 1) throw new Error('Notes or repository mappings changed during sync; retry.');
-            const next = updateBlock(mapping.content, mapping.bodyOffset, mapping.repo, issues, taskOptions);
-            let wrote = false;
-            const check = (current: string) => {
-              if (!active() || this.excluded(file.path)) throw new Error('Sync cancelled.');
-              if (JSON.stringify(this.settings) !== configuration) throw new Error('Settings changed during sync; retry.');
-              if (revision !== this.vaultRevision) throw new Error('Notes changed during sync; retry.');
-              if (current !== mapping.content || this.dirty(file, current)) throw new Error('Note changed during sync; retry after saving.');
-              const latest = this.mapping(current);
-              if (!latest || latest.repo !== mapping.repo) throw new Error('Repository mapping changed during sync; retry.');
-              return next;
-            };
-            if (next === mapping.content) {
-              // Avoid calling Vault.process at all when no content changed.
-              check(await this.app.vault.read(file));
-            } else {
-              await this.app.vault.process(file, check);
-              wrote = true;
-            }
-            if (!active()) return;
-            if (wrote) updated++;
-            completed++;
-            const key = `${login.toLowerCase()}:${mapping.repo}`;
-            const numbers = issues.map(i => i.number);
-            const fresh = newIssueNumbers(this.local.snapshots[key], numbers);
-            for (const number of fresh) {
-              if (!this.local.unread.some(i => i.repo === mapping.repo && i.number === number)) {
-                this.local.unread.push({ repo: mapping.repo, number, path: mapping.path }); added++;
-              }
-            }
-            this.local.snapshots[key] = numbers;
-            this.persistLocal();
-          } catch (error) {
-            if (!active()) return;
-            warnings.push(`${mapping.path}: ${error instanceof Error ? error.message : 'Sync failed; previous tasks retained.'}`);
-            if (error instanceof ApiError && error.retryAt) { this.retryAt = error.retryAt; break; }
-            if (error instanceof ApiError && error.status === 401) break;
-          }
+      const notice = await syncAssignedIssues({
+        app: this.app,
+        settings: () => this.settings,
+        state: this.local,
+        session: this.session,
+        http: this.http,
+        active,
+        revision: () => this.vaultRevision,
+        persist: () => this.persistLocal(),
+        backOffUntil: time =>
+        {
+          this.retryAt = time;
         }
-        this.local.summary = `${completed}/${mappings.length} mapped note(s) checked; ${updated} updated; ${added} new assigned issue(s).${warnings.length ? '\n' + warnings.join('\n') : ''}`;
-      }
-      if (!warnings.length) this.local.lastSync = Date.now();
-      if (active() && (manual || warnings.length || (added > 0 && this.settings.notifyNew))) {
-        new Notice(added && this.settings.notifyNew ? `Issue Bridge: ${added} new assigned issue(s). Click the status bar or use “Show new assigned issues”.${warnings.length ? ' Some notes were skipped; see settings.' : ''}`
-          : warnings.length ? 'Issue Bridge: some notes were skipped. See settings for details.' : `Issue Bridge: ${completed} mapped note(s) checked, ${updated} updated.`);
-      }
+      }, manual);
+      if (active() && notice) new Notice(`Issue Bridge: ${notice}`);
     } catch (error) {
       if (!active()) return;
       if (error instanceof ApiError && error.retryAt) this.retryAt = error.retryAt;

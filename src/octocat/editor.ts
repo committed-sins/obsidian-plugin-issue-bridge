@@ -4,7 +4,7 @@ import MarkdownIt from 'markdown-it';
 import { createOctocat } from './render';
 import { OCTOCAT } from './shortcode';
 
-const markdown = new MarkdownIt();
+const markdown = new MarkdownIt({ html: true });
 const literalBlocks = new Set(['fence', 'code_block', 'html_block']);
 
 // Keep offsets aligned with CodeMirror's normalized LF document.
