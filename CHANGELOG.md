@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9 — 2026-11-24
+
+- Round Octocat dimensions to whole CSS pixels to prevent adjacent icons from appearing different sizes.
+
 ## 0.1.8 — 2026-11-24
 
 - Render `:octocat:` in note prose, headings and task descriptions. Imported GitHub Issues now use the same editable shortcode.
