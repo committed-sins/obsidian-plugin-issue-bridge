@@ -8,7 +8,8 @@ import { duplicateRepos, newIssueNumbers, repositoryFromProperty, taskIds, updat
 import { registerRepositoryPreview } from './preview/block';
 import { PreviewCache } from './preview/cache';
 import { previewPath } from './preview/markdown';
-import { registerTaskIcons, sourceIcons } from './sync/icons';
+import { octocatEditor } from './octocat/editor';
+import { registerOctocatRenderer } from './octocat/render';
 import { readLocalState, type LocalState } from './localState';
 import { isRecord } from './validation';
 const LOCAL_KEY = 'issue-bridge-v1';
@@ -44,8 +45,8 @@ export default class IssueBridge extends Plugin {
     if (!this.app.secretStorage) { new Notice('Issue Bridge requires Obsidian SecretStorage. Update Obsidian before signing in.'); return; }
     this.session = new Session(this.http, this.app.secretStorage, this.local.secretId, () => this.alive);
     registerRepositoryPreview(this, (note, path, force) => this.repositoryPreview(note, path, force));
-    this.registerEditorExtension(sourceIcons);
-    registerTaskIcons(this);
+    this.registerEditorExtension(octocatEditor);
+    registerOctocatRenderer(this);
     this.addSettingTab(new IssueBridgeSettings(this.app, this));
     const changed = () => { this.vaultRevision++; };
     this.registerEvent(this.app.vault.on('modify', changed));

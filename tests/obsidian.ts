@@ -1,4 +1,10 @@
 // Minimal synthetic host for runtime tests; not a simulation of real Obsidian persistence.
+import { StateField } from '@codemirror/state';
+
+export const editorLivePreviewField = StateField.define<boolean>({
+  create: () => true,
+  update: value => value
+});
 export class TFile { constructor(public path = '') {} }
 export class MarkdownView { constructor(public file: TFile, private text: string) {} getViewData() { return this.text; } }
 export class Notice { static messages: string[] = []; constructor(message: string) { Notice.messages.push(message); } }

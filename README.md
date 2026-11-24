@@ -21,10 +21,10 @@ A single URL works too. The first valid GitHub repository URL wins. Use one note
 Imported tasks display an Octocat, a plain title, a linked issue number, then Tasks metadata. **Respect Obsidian Tasks** is enabled by default: it adds a stable six-character ID and the issue's creation date (UTC), using the saved Tasks emoji or Dataview format and global filter. New IDs are checked against existing IDs in non-excluded notes; older IDs remain unchanged. Without Tasks, it uses emoji. Local scheduling, priorities, dependencies and tags survive synchronization. Disabling the option stops adding metadata and retains existing metadata.
 
 ```markdown
-- [ ] Fix login [#42](https://github.com/owner/repository/issues/42) 🆔 a7k2m9 ➕ 2026-11-19
+- [ ] :octocat: Fix login [#42](https://github.com/owner/repository/issues/42) 🆔 a7k2m9 ➕ 2026-11-19
 ```
 
-The Octocat is displayed before the title without adding icon markup to the note.
+Type `:octocat:` in any note to display the Octocat in Live Preview, Reading view and rendered task lists. Source mode shows the original shortcode.
 
 Under **Source tags → GitHub issues tag**, optionally set a tag such as `#source/github`. Default: empty. The tag is appended on sync, including with Tasks integration disabled, without duplicating an existing identical tag. Changing or clearing the setting preserves tags already stored in notes.
 

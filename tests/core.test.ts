@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { START, END, createTaskId, duplicateRepos, normalizeRepo, repositoryFromProperty, renderTasks, taskIds, updateBlock, newIssueNumbers, safeTitle } from '../src/sync/core';
-import { decorateIssueLinks, registerTaskIcons, taskIconOffset, TaskIcons } from '../src/sync/icons';
+import { literalLines, shortcodeOffsets } from '../src/octocat/editor';
+import { renderOctocats, registerOctocatRenderer, OctocatRenderChild } from '../src/octocat/render';
 import { parseHTML } from 'linkedom';
 import { appendSourceTag, cleanSourceTags, normalizeSourceTag } from '../src/sync/sourceTags';
 import { GitHubClient, ApiError, type Issue } from '../src/github/client';
@@ -62,7 +63,7 @@ test('source tags append after Tasks metadata and also work when Tasks integrati
       const next = updateBlock(planned, 0, 'o/r', [{ ...fixture[0], title: 'Updated', state: 'closed' }], options);
       assert.ok(next.includes(' #personal 📅 2026-12-01'));
       assert.equal(next.match(/#source\/github/g)?.length, 1);
-      assert.ok(next.includes('- [x] Updated [#2]'));
+      assert.ok(next.includes('- [x] :octocat: Updated [#2]'));
     }
   }
   assert.throws(() => renderTasks('o/r', fixture, '\n', { respectTasks: false, format: 'emoji', sourceTag: '#invalid tag' }));
@@ -95,18 +96,15 @@ test('legacy imported lines migrate to plain titles with number-only links, reta
   const old = `${START}\n- [ ] [#2 Keep context](https://github.com/o/r/issues/2) 🆔 ${oldId} ➕ 2026-11-01 ⏳ 2026-12-01 ⛔ other_id\n${END}`;
   const options = { respectTasks: true, format: 'emoji' as const };
   const next = updateBlock(old, 0, 'o/r', [fixture[0]], options);
-  assert.ok(next.includes('- [ ] Keep context [#2](https://github.com/o/r/issues/2)'));
+  assert.ok(next.includes('- [ ] :octocat: Keep context [#2](https://github.com/o/r/issues/2)'));
   assert.ok(next.includes(`🆔 ${oldId}`)); assert.ok(next.includes('⏳ 2026-12-01 ⛔ other_id'));
   assert.equal(updateBlock(next, 0, 'o/r', [fixture[0]], options), next);
-  assert.equal(taskIconOffset('- [ ] Keep context [#2](https://github.com/o/r/issues/2) 🆔 abc123'), 6);
-  assert.equal(taskIconOffset('- [ ] [#2 Keep context](https://github.com/o/r/issues/2)'), 6);
-  assert.equal(taskIconOffset('A normal paragraph [#2](https://github.com/o/r/issues/2)'), null);
 });
 
 test('number-only links follow escaped plain titles and precede all Tasks metadata', () =>
 {
   const result = renderTasks('o/r', [{ ...fixture[0], title: 'Title [brackets] **bold** 📅 2099-01-01' }], '\n', { respectTasks: true, format: 'emoji' });
-  assert.match(result, /^- \[ \] Title \\\[brackets\\\] \\\*\\\*bold\\\*\\\* &#128197; 2099-01-01 \[#2\]\(https:\/\/github\.com\/o\/r\/issues\/2\) 🆔 [a-z\d]{6} ➕ 2026-11-01$/);
+  assert.match(result, /^- \[ \] :octocat: Title \\\[brackets\\\] \\\*\\\*bold\\\*\\\* &#128197; 2099-01-01 \[#2\]\(https:\/\/github\.com\/o\/r\/issues\/2\) 🆔 [a-z\d]{6} ➕ 2026-11-01$/);
 });
 
 async function withTaskDom(html: string, run: (root: HTMLElement) => void | Promise<void>): Promise<void>
@@ -132,90 +130,31 @@ async function withTaskDom(html: string, run: (root: HTMLElement) => void | Prom
   }
 }
 
-test('Octocat starts native and Tasks descriptions, stays outside links and is not duplicated', async () =>
+test('Octocat renders in prose, headings and tasks while literal code is preserved', async () =>
 {
-  await withTaskDom(`<ul>
-    <li class="task-list-item" id="native"><input type="checkbox">Plain title <a href="https://github.com/o/r/issues/2">#2</a> 🆔 abc123</li>
-    <li class="task-list-item" id="query"><input type="checkbox"><span class="tasks-list-text"><span class="task-description">Query title <a href="https://github.com/o/r/issues/3">#3</a></span></span></li>
-    <li class="task-list-item" id="other"><input type="checkbox">Other <a href="https://example.org/o/r/issues/4">#4</a></li>
-    </ul><p><a href="https://github.com/o/r/issues/2">#2</a></p>`, root =>
+  await withTaskDom('<h2>:octocat: Heading</h2><p>Text :octocat: <a href="https://example.test/:octocat:">label :octocat:</a> <code>:octocat:</code></p><pre>:octocat:</pre><ul><li><input type="checkbox">:octocat: Imported <a href="https://github.com/o/r/issues/1">#1</a></li><li>Old link <a href="https://github.com/o/r/issues/2">#2</a></li></ul>', root =>
   {
-    decorateIssueLinks(root); decorateIssueLinks(root);
-    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 2);
-    const native = root.querySelector('#native')!;
-    assert.equal((native.childNodes[1] as HTMLElement).className, 'issue-bridge-github-icon');
-    assert.ok(native.childNodes[2].textContent?.startsWith('Plain title'));
-    const query = root.querySelector('#query .task-description')!;
-    assert.equal((query.firstChild as HTMLElement).className, 'issue-bridge-github-icon');
-    assert.ok(query.childNodes[1].textContent?.startsWith('Query title'));
-    assert.equal(root.querySelectorAll('a .issue-bridge-github-icon').length, 0);
-    assert.equal(root.querySelector('#other .issue-bridge-github-icon'), null);
+    renderOctocats(root); renderOctocats(root);
+    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 4);
+    assert.equal(root.querySelector('code')!.textContent, ':octocat:');
+    assert.equal(root.querySelector('pre')!.textContent, ':octocat:');
+    assert.equal(root.querySelector('a')!.getAttribute('href'), 'https://example.test/:octocat:');
+    assert.equal((root.querySelector('input')!.nextSibling as HTMLElement).className, 'issue-bridge-github-icon');
+    assert.equal(root.querySelector('li:last-child .issue-bridge-github-icon'), null);
   });
 });
 
-test('Octocat reuses a wrapped icon and removes existing duplicates from the same task', async () =>
+test('editor detects shortcodes outside frontmatter, code and link destinations', () =>
 {
-  for (const extra of ['', '<span class="issue-bridge-github-icon"></span>']) {
-    await withTaskDom(`<ul><li class="task-list-item"><input type="checkbox"><span class="tasks-list-text"><span class="task-description">${extra}<p><span class="issue-bridge-github-icon"></span>Plain title <a href="https://github.com/o/r/issues/1">#1</a></p></span></span></li></ul>`, root =>
-    {
-      const original = root.querySelector('.issue-bridge-github-icon');
-      decorateIssueLinks(root); decorateIssueLinks(root);
-      assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 1);
-      assert.equal(root.querySelector('.task-description')!.firstChild, original);
-      assert.ok(root.textContent?.includes('Plain title #1'));
-      assert.equal(root.querySelector('a')!.textContent, '#1');
-    });
-  }
+  const tick = String.fromCharCode(96);
+  const fence = tick.repeat(3);
+  const text = ['---', 'name: :octocat:', '---', '', ':octocat: prose', '', fence, ':octocat:', fence, '', '    :octocat:'].join('\n');
+  assert.deepEqual([...literalLines(text)], [1, 2, 3, 7, 8, 9, 11]);
+  const line = ':octocat: ' + tick + ':octocat:' + tick + ' [link](https://example.test/:octocat:) :octocat:';
+  assert.deepEqual(shortcodeOffsets(line), [0, line.lastIndexOf(':octocat:')]);
 });
 
-test('parent tasks and subtasks each retain their own Octocat across overlapping render roots', async () =>
-{
-  await withTaskDom(`<ul><li class="task-list-item" id="parent"><input type="checkbox">Parent <a href="https://github.com/o/r/issues/1">#1</a> and <a href="https://github.com/o/r/issues/3">#3</a><ul><li class="task-list-item" id="child"><input type="checkbox"><span class="issue-bridge-github-icon"></span>Child <a href="https://github.com/o/r/issues/2">#2</a></li></ul></li></ul>`, root =>
-  {
-    const childIcon = root.querySelector('#child .issue-bridge-github-icon');
-    const parent = root.querySelector<HTMLElement>('#parent')!;
-    decorateIssueLinks(root); decorateIssueLinks(parent); decorateIssueLinks(root);
-    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 2);
-    assert.equal(root.querySelector('#child .issue-bridge-github-icon'), childIcon);
-    assert.equal(Array.from(parent.querySelectorAll('.issue-bridge-github-icon')).filter(icon => icon.closest('li') === parent).length, 1);
-    assert.equal(parent.querySelector('input')!.nextSibling, parent.querySelector('.issue-bridge-github-icon'));
-  });
-});
-
-test('Octocat stays singular when Tasks asynchronously wraps already decorated content', async () =>
-{
-  await withTaskDom('<ul><li class="task-list-item"><span class="task-description">Title <a href="https://github.com/o/r/issues/1">#1</a> 🆔 abc123</span></li></ul>', async root =>
-  {
-    const component = new TaskIcons(root); component.onload();
-    try {
-      const description = root.querySelector('.task-description')!;
-      description.innerHTML = `<p>${description.innerHTML}</p>`;
-      await settle();
-      assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 1);
-      assert.equal((description.firstChild as HTMLElement).className, 'issue-bridge-github-icon');
-      assert.ok(description.textContent?.includes('Title #1 🆔 abc123'));
-      const stable = root.innerHTML;
-      await settle(); assert.equal(root.innerHTML, stable);
-    } finally { component.onunload(); }
-  });
-});
-
-test('Octocat decorates asynchronously rendered Tasks and disconnects its observer on unload', async () =>
-{
-  await withTaskDom('<div id="results"></div>', async root =>
-  {
-    const component = new TaskIcons(root); component.onload();
-    root.querySelector('#results')!.innerHTML = '<li class="task-list-item">Late title <a href="https://github.com/o/r/issues/9">#9</a></li>';
-    await settle();
-    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 1);
-    component.onunload();
-    root.querySelector('#results')!.innerHTML = '<li class="task-list-item">After unload <a href="https://github.com/o/r/issues/10">#10</a></li>';
-    await settle();
-    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 0);
-  });
-});
-
-test('plugin cleanup disconnects render observers even while their note remains open', async () =>
+test('shortcodes render in late Tasks results and are restored on plugin unload', async () =>
 {
   await withTaskDom('<div id="results"></div>', async root =>
   {
@@ -231,14 +170,24 @@ test('plugin cleanup disconnects render observers even while their note remains 
         processor = callback;
       }
     };
-    registerTaskIcons(plugin as unknown as Plugin);
-    await processor!(root, { addChild: (child: TaskIcons) => child.onload() } as unknown as Parameters<MarkdownPostProcessor>[1]);
+    registerOctocatRenderer(plugin as unknown as Plugin);
+    await processor!(root, { addChild: (child: OctocatRenderChild) => child.onload() } as unknown as Parameters<MarkdownPostProcessor>[1]);
+    const results = root.querySelector('#results')!;
+    results.innerHTML = '<ul><li><span class="task-description"><p>:octocat: Late task</p></span></li></ul>';
+    await settle();
+    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 1);
+    results.innerHTML = '<div>' + results.innerHTML + '</div>';
+    await settle();
+    assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 1);
     cleanup!();
-    root.querySelector('#results')!.innerHTML = '<li class="task-list-item">After disable <a href="https://github.com/o/r/issues/10">#10</a></li>';
+    await settle();
+    assert.equal(results.textContent, ':octocat: Late task');
+    results.textContent = ':octocat: Disabled';
     await settle();
     assert.equal(root.querySelectorAll('.issue-bridge-github-icon').length, 0);
   });
 });
+
 
 test('stored state validates unknown data while retaining the credential reference and valid entries', () =>
 {
@@ -327,7 +276,7 @@ test('Tasks metadata keeps IDs and local planning across issue updates and forma
   assert.equal(updateBlock(first, 0, 'o/r', fixture, options), first);
   const planned = first.replace('➕ 2026-11-01', '➕ 2026-11-01 ⏳ 2026-12-01 📅 2026-12-02 ⏫ ⛔ dependency #local');
   const changed = updateBlock(planned, 0, 'o/r', [{ ...fixture[0], title: 'Renamed', state: 'closed' }], options);
-  assert.ok(changed.includes('- [x] Renamed [#2]'));
+  assert.ok(changed.includes('- [x] :octocat: Renamed [#2]'));
   assert.ok(changed.includes(`🆔 ${ids[1]}`));
   assert.ok(changed.includes('⏳ 2026-12-01 📅 2026-12-02 ⏫ ⛔ dependency #local'));
   assert.ok(changed.startsWith('Manual task\n'));
@@ -360,7 +309,7 @@ test('repository normalization rejects credentials, arbitrary hosts and subpaths
 test('task renderer handles state and escapes hostile Markdown and Tasks metadata', () => {
   const result = renderTasks('owner/repo', [{ number: 1, title: 'A](https://evil.test)\n- [ ] 📅 2030-01-01 <!-- issue-bridge:end --> <script>', state: 'closed', createdAt: '2026-11-01T10:00:00Z' }]);
   assert.equal(result.split('\n').length, 1);
-  assert.ok(result.startsWith('- [x] A\\]'));
+  assert.ok(result.startsWith('- [x] :octocat: A\\]'));
   assert.ok(!result.includes('📅')); assert.ok(!result.includes('<script>')); assert.ok(!result.includes(END));
   assert.ok(result.endsWith('](https://github.com/owner/repo/issues/1)'));
 });

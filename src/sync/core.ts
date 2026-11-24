@@ -1,4 +1,5 @@
 import type { Issue } from '../github/client';
+import { OCTOCAT } from '../octocat/shortcode';
 import { appendSourceTag, normalizeSourceTag } from './sourceTags';
 export const START = '<!-- issue-bridge:start -->';
 export const END = '<!-- issue-bridge:end -->';
@@ -88,7 +89,7 @@ export function renderTasks(repo: string, issues: Issue[], eol = '\n', options =
   return [...issues].sort((a, b) => a.number - b.number).map(issue =>
   {
     const suffix = appendSourceTag(taskMetadata(issue, suffixes.get(issue.number) ?? '', metadataOptions), sourceTag);
-    return `- [${issue.state === 'closed' ? 'x' : ' '}] ${safeTitle(issue.title)} [#${issue.number}](https://github.com/${repo}/issues/${issue.number})${suffix}`;
+    return `- [${issue.state === 'closed' ? 'x' : ' '}] ${OCTOCAT} ${safeTitle(issue.title)} [#${issue.number}](https://github.com/${repo}/issues/${issue.number})${suffix}`;
   }).join(eol);
 }
 export function updateBlock(content: string, bodyOffset: number, repo: string, issues: Issue[], options = PLAIN_TASKS): string
